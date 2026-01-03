@@ -60,7 +60,8 @@ const AdminPanel = () => {
         // Список админ email
         const adminEmails = [
           'bbaxromov14@gmail.com',
-          'eduhelperuz@gmail.com'
+          'eduhelperuz@gmail.com',
+          'lahena2199@gavrom.com'
         ];
 
         // ПРЯМОЙ ДОСТУП: Если email в списке админов
