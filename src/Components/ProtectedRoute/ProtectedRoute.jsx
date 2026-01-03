@@ -25,15 +25,15 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
   // Проверка на админа
   if (adminOnly) {
     const adminEmails = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
-    const isAdmin = adminEmails.includes(user.email) || user.role === 'admin';
-    
+    const isAdmin = adminEmails.includes(user.email) || user.role === 'admin' || user.role === 'super_admin';
+
     if (!isAdmin) {
       return (
         <div className="min-h-screen flex items-center justify-center">
           <div className="text-center p-8">
             <h1 className="text-3xl font-bold text-red-600 mb-4">🚫 Ruxsat yo'q</h1>
             <p>Bu sahifani faqat administratorlar ko'ra oladi</p>
-            <button 
+            <button
               onClick={() => window.location.href = '/'}
               className="mt-6 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >

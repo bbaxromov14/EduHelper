@@ -25,14 +25,13 @@ const AdminProtectedRoute = ({ children }) => {
           .single();
 
         if (error) throw error;
-        
+
         if (data) {
-          // Проверяем роль в профиле
-          setIsAdmin(data.role === 'admin');
+          setIsAdmin(data.role === 'admin' || data.role === 'super_admin');
         } else {
           // Если профиля нет, проверяем email (для совместимости)
-          setIsAdmin(user.email === 'bbaxromov14@gmail.com' || 
-                    user.email === 'eduhelperuz@gmail.com');
+          setIsAdmin(user.email === 'bbaxromov14@gmail.com' ||
+            user.email === 'eduhelperuz@gmail.com');
         }
       } catch (error) {
         console.error("Admin check error:", error);
@@ -70,7 +69,7 @@ const AdminProtectedRoute = ({ children }) => {
         <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-12 text-center">
           <h1 className="text-6xl font-bold text-white mb-6">403</h1>
           <p className="text-2xl text-white mb-4">Доступ только для администраторов</p>
-          <button 
+          <button
             onClick={() => window.location.href = '/'}
             className="mt-8 px-8 py-4 bg-white text-purple-600 rounded-xl font-bold hover:scale-105 transition"
           >
