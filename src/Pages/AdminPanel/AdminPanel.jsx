@@ -60,7 +60,6 @@ const AdminPanel = () => {
         // Список админ email
         const adminEmails = [
           'bbaxromov14@gmail.com',
-          'admin@eduhelper.uz',
           'eduhelperuz@gmail.com'
         ];
 

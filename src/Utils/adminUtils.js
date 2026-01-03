@@ -42,7 +42,6 @@ export const adminUtils = {
     isAdminEmail: (email) => {
       const adminEmails = [
         'bbaxromov14@gmail.com',
-        'admin@eduhelper.uz',
         'eduhelperuz@gmail.com'
       ];
       return adminEmails.includes(email);

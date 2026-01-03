@@ -24,7 +24,7 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
 
   // Проверка на админа
   if (adminOnly) {
-    const adminEmails = ['bbaxromov14@gmail.com', 'admin@eduhelper.uz'];
+    const adminEmails = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
     const isAdmin = adminEmails.includes(user.email) || user.role === 'admin';
     
     if (!isAdmin) {
