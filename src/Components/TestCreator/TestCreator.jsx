@@ -1,0 +1,399 @@
+import React, { useState } from 'react';
+import { supabase } from '../../lib/supabase'; // Импортируем Supabase клиент
+
+const TestCreator = ({ courseId, lessonId }) => {
+  const [questions, setQuestions] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState({
+    text: '',
+    type: 'multiple-choice',
+    options: ['', '', '', ''],
+    correctAnswer: 0,
+    points: 10,
+    explanation: '',
+    videoTimestamp: '00:00'
+  });
+  const [testSettings, setTestSettings] = useState({
+    title: 'Тест по уроку',
+    passingScore: 70,
+    timeLimit: 300, // 5 минут в секундах
+    attemptsAllowed: 3,
+    showResults: true
+  });
+
+  // Добавить вопрос
+  const addQuestion = () => {
+    if (!currentQuestion.text.trim()) {
+      alert('Введите текст вопроса!');
+      return;
+    }
+
+    const newQuestion = {
+      ...currentQuestion,
+      id: Date.now() + Math.random(),
+      options: currentQuestion.type === 'multiple-choice' 
+        ? currentQuestion.options.filter(opt => opt.trim() !== '')
+        : []
+    };
+
+    setQuestions([...questions, newQuestion]);
+    
+    // Сброс формы
+    setCurrentQuestion({
+      text: '',
+      type: 'multiple-choice',
+      options: ['', '', '', ''],
+      correctAnswer: 0,
+      points: 10,
+      explanation: '',
+      videoTimestamp: '00:00'
+    });
+  };
+
+  // Удалить вопрос
+  const removeQuestion = (id) => {
+    setQuestions(questions.filter(q => q.id !== id));
+  };
+
+  // Сохранить тест в Supabase
+  const saveTest = async () => {
+    if (questions.length === 0) {
+      alert('Добавьте хотя бы один вопрос!');
+      return;
+    }
+
+    try {
+      // 1. Сохраняем тест в таблицу tests
+      const { data: testData, error: testError } = await supabase
+        .from('tests')
+        .insert({
+          course_id: courseId,
+          lesson_id: lessonId,
+          title: testSettings.title,
+          questions: questions.map((q, index) => ({
+            ...q,
+            order: index + 1,
+            // Убираем временный id
+            id: undefined
+          })),
+          passing_score: testSettings.passingScore,
+          time_limit: testSettings.timeLimit,
+          attempts_allowed: testSettings.attemptsAllowed,
+          show_results: testSettings.showResults,
+          total_points: questions.reduce((sum, q) => sum + q.points, 0),
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (testError) throw testError;
+
+      // 2. Обновляем урок, чтобы показать что у него есть тест
+      const { error: lessonError } = await supabase
+        .from('lessons')
+        .update({
+          has_test: true,
+          test_id: testData.id
+        })
+        .eq('id', lessonId);
+
+      if (lessonError) {
+        console.error('Ошибка обновления урока:', lessonError);
+        // Не прерываем выполнение, тест уже создан
+      }
+
+      // 3. Также обновляем курс, чтобы увеличить счетчик тестов если нужно
+      // (опционально, зависит от вашей структуры)
+
+      alert('✅ Тест успешно сохранен в Supabase!');
+      setQuestions([]); // Очищаем после сохранения
+
+    } catch (error) {
+      console.error('Ошибка сохранения теста:', error);
+      alert('Ошибка: ' + error.message);
+    }
+  };
+
+  // ... остальная часть JSX остается без изменений ...
+  return (
+    <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
+      <h3 className="text-xl font-bold mb-6">📝 Создание теста для урока</h3>
+
+      {/* Настройки теста */}
+      <div className="mb-8 p-4 bg-gray-900/50 rounded-xl">
+        <h4 className="font-bold mb-4">⚙️ Настройки теста</h4>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-2">Название теста</label>
+            <input
+              type="text"
+              value={testSettings.title}
+              onChange={(e) => setTestSettings({...testSettings, title: e.target.value})}
+              className="w-full p-3 bg-gray-800 rounded-lg"
+              placeholder="Тест по теме..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-2">Проходной балл (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={testSettings.passingScore}
+              onChange={(e) => setTestSettings({...testSettings, passingScore: parseInt(e.target.value)})}
+              className="w-full p-3 bg-gray-800 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-2">Лимит времени (сек)</label>
+            <input
+              type="number"
+              min="60"
+              max="3600"
+              value={testSettings.timeLimit}
+              onChange={(e) => setTestSettings({...testSettings, timeLimit: parseInt(e.target.value)})}
+              className="w-full p-3 bg-gray-800 rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-2">Попыток разрешено</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={testSettings.attemptsAllowed}
+              onChange={(e) => setTestSettings({...testSettings, attemptsAllowed: parseInt(e.target.value)})}
+              className="w-full p-3 bg-gray-800 rounded-lg"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Форма создания вопроса */}
+      <div className="mb-8 p-4 bg-gray-900/50 rounded-xl">
+        <h4 className="font-bold mb-4">➕ Новый вопрос</h4>
+        
+        <div className="space-y-4">
+          {/* Текст вопроса */}
+          <div>
+            <label className="block text-sm mb-2">Текст вопроса *</label>
+            <textarea
+              value={currentQuestion.text}
+              onChange={(e) => setCurrentQuestion({...currentQuestion, text: e.target.value})}
+              className="w-full p-3 bg-gray-800 rounded-lg h-24"
+              placeholder="Введите вопрос..."
+            />
+          </div>
+
+          {/* Тип вопроса */}
+          <div>
+            <label className="block text-sm mb-2">Тип вопроса</label>
+            <select
+              value={currentQuestion.type}
+              onChange={(e) => setCurrentQuestion({...currentQuestion, type: e.target.value})}
+              className="w-full p-3 bg-gray-800 rounded-lg"
+            >
+              <option value="multiple-choice">Множественный выбор</option>
+              <option value="true-false">Верно/Неверно</option>
+              <option value="single-choice">Один вариант</option>
+              <option value="text">Текстовый ответ</option>
+            </select>
+          </div>
+
+          {/* Варианты ответов (для multiple/single choice) */}
+          {(currentQuestion.type === 'multiple-choice' || currentQuestion.type === 'single-choice') && (
+            <div>
+              <label className="block text-sm mb-2">Варианты ответов</label>
+              {currentQuestion.options.map((option, index) => (
+                <div key={index} className="flex items-center gap-3 mb-2">
+                  <input
+                    type="radio"
+                    name="correctAnswer"
+                    checked={currentQuestion.correctAnswer === index}
+                    onChange={() => setCurrentQuestion({...currentQuestion, correctAnswer: index})}
+                    className="w-4 h-4"
+                  />
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(e) => {
+                      const newOptions = [...currentQuestion.options];
+                      newOptions[index] = e.target.value;
+                      setCurrentQuestion({...currentQuestion, options: newOptions});
+                    }}
+                    className="flex-1 p-2 bg-gray-800 rounded-lg"
+                    placeholder={`Вариант ${index + 1}`}
+                  />
+                  <button
+                    onClick={() => {
+                      const newOptions = currentQuestion.options.filter((_, i) => i !== index);
+                      setCurrentQuestion({...currentQuestion, options: newOptions});
+                    }}
+                    className="px-3 py-1 bg-red-600 rounded-lg text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setCurrentQuestion({
+                  ...currentQuestion, 
+                  options: [...currentQuestion.options, '']
+                })}
+                className="mt-2 px-4 py-2 bg-blue-600 rounded-lg text-sm"
+              >
+                + Добавить вариант
+              </button>
+            </div>
+          )}
+
+          {/* Для верно/неверно */}
+          {currentQuestion.type === 'true-false' && (
+            <div>
+              <label className="block text-sm mb-2">Правильный ответ</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="trueFalse"
+                    checked={currentQuestion.correctAnswer === 0}
+                    onChange={() => setCurrentQuestion({...currentQuestion, correctAnswer: 0})}
+                  />
+                  Верно
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="trueFalse"
+                    checked={currentQuestion.correctAnswer === 1}
+                    onChange={() => setCurrentQuestion({...currentQuestion, correctAnswer: 1})}
+                  />
+                  Неверно
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Баллы и объяснение */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm mb-2">Баллы за вопрос</label>
+              <input
+                type="number"
+                min="1"
+                max="100"
+                value={currentQuestion.points}
+                onChange={(e) => setCurrentQuestion({...currentQuestion, points: parseInt(e.target.value)})}
+                className="w-full p-3 bg-gray-800 rounded-lg"
+              />
+            </div>
+            <div>
+              <label className="block text-sm mb-2">Время в видео (мм:сс)</label>
+              <input
+                type="text"
+                value={currentQuestion.videoTimestamp}
+                onChange={(e) => setCurrentQuestion({...currentQuestion, videoTimestamp: e.target.value})}
+                className="w-full p-3 bg-gray-800 rounded-lg"
+                placeholder="05:30"
+              />
+            </div>
+          </div>
+
+          {/* Объяснение ответа */}
+          <div>
+            <label className="block text-sm mb-2">Объяснение (показывается после ответа)</label>
+            <textarea
+              value={currentQuestion.explanation}
+              onChange={(e) => setCurrentQuestion({...currentQuestion, explanation: e.target.value})}
+              className="w-full p-3 bg-gray-800 rounded-lg h-20"
+              placeholder="Почему этот ответ правильный..."
+            />
+          </div>
+
+          {/* Кнопка добавления */}
+          <button
+            onClick={addQuestion}
+            className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg font-bold hover:opacity-90"
+          >
+            ✅ Добавить вопрос
+          </button>
+        </div>
+      </div>
+
+      {/* Список добавленных вопросов */}
+      {questions.length > 0 && (
+        <div className="mb-8">
+          <h4 className="font-bold mb-4">
+            📋 Добавленные вопросы ({questions.length})
+          </h4>
+          <div className="space-y-4">
+            {questions.map((question, index) => (
+              <div key={question.id} className="p-4 bg-gray-900/50 rounded-xl border border-gray-700">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <span className="text-gray-400">#{index + 1}</span>
+                    <span className="ml-2 font-bold">{question.text}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="px-2 py-1 bg-yellow-600 rounded text-xs">
+                      {question.points} баллов
+                    </span>
+                    <button
+                      onClick={() => removeQuestion(question.id)}
+                      className="px-3 py-1 bg-red-600 rounded-lg text-sm"
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+                {question.type === 'multiple-choice' && (
+                  <div className="mt-2">
+                    <div className="text-sm text-gray-400">Варианты:</div>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {question.options.map((opt, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`px-3 py-1 rounded ${idx === question.correctAnswer ? 'bg-green-700' : 'bg-gray-700'}`}
+                        >
+                          {opt} {idx === question.correctAnswer && '✓'}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {question.explanation && (
+                  <div className="mt-2 text-sm text-gray-400">
+                    💡 {question.explanation}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Итоговая статистика */}
+          <div className="mt-6 p-4 bg-blue-900/20 rounded-xl">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-lg font-bold">
+                  Всего баллов: {questions.reduce((sum, q) => sum + q.points, 0)}
+                </div>
+                <div className="text-sm text-gray-400">
+                  Для прохождения нужно: {testSettings.passingScore}%
+                </div>
+              </div>
+              <button
+                onClick={saveTest}
+                className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg font-bold hover:opacity-90"
+              >
+                💾 Сохранить тест в Supabase
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default TestCreator;
