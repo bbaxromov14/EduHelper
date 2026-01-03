@@ -24,7 +24,7 @@ let adminCache = {
       
       // Обновляем кеш
       adminCache = {
-        emails: [...emails, 'bbaxromov14@gmail.com', 'eduhelperuz@gmail.com', 'lahena2199@gavrom.com'], // Добавляем fallback
+        emails: [...emails, 'bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'], // Добавляем fallback
         lastUpdated: now
       };
       
@@ -34,7 +34,7 @@ let adminCache = {
       // Возвращаем старый кеш или fallback
       return adminCache.emails.length > 0 
         ? adminCache.emails 
-        : ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com', 'lahena2199@gavrom.com'];
+        : ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
     }
   };
   

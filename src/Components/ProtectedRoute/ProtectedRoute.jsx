@@ -25,7 +25,7 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
         const adminEmails = adminUsers?.map(u => u.email) || [];
         
         // 2. Fallback на статичные email (на всякий случай)
-        const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com', 'lahena2199@gavrom.com'];
+        const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
         
         // 3. Проверяем email пользователя
         const isAdminUser = adminEmails.includes(user.email) || 
@@ -37,7 +37,7 @@ const ProtectedRoute = ({ children, adminOnly = false }) => {
       } catch (error) {
         console.error('Admin check error:', error);
         // Если база недоступна, проверяем только статичные email
-        const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com', 'lahena2199@gavrom.com'];
+        const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
         setIsAdmin(fallbackAdmins.includes(user.email));
       } finally {
         setAdminLoading(false);

@@ -31,7 +31,7 @@ const AdminProtectedRoute = ({ children }) => {
         } else {
           // Если профиля нет, проверяем email (для совместимости)
           setIsAdmin(user.email === 'bbaxromov14@gmail.com' ||
-            user.email === 'eduhelperuz@gmail.com' || user.email === 'lahena2199@gavrom.com' );
+            user.email === 'eduhelperuz@gmail.com');
         }
       } catch (error) {
         console.error("Admin check error:", error);
