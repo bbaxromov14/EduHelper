@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
-import { checkPremiumStatus, getPremiumInfo } from '../../Utils/premiumManager';
+import { checkPremiumStatus, getPremiumInfo } from '../../utils/premiumManager'; // Исправлен импорт
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
@@ -38,21 +38,59 @@ const Subjects = () => {
     };
   }, []);
 
-  // Загрузка Premium статуса пользователя
+  // Загрузка Premium статуса пользователя с улучшенной отладкой
   useEffect(() => {
     const loadPremiumStatus = async () => {
+      console.log('=== ЗАГРУЗКА PREMIUM СТАТУСА ===');
+      console.log('isAuthenticated:', isAuthenticated);
+      console.log('userData:', userData);
+      
       if (isAuthenticated && userData?.profile?.id) {
         setCheckingPremium(true);
         try {
+          console.log('🔄 Запрашиваю Premium статус для пользователя:', userData.profile.id);
+          
+          // Прямой запрос к базе для проверки
+          const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('is_premium, premium_until, premium_type')
+            .eq('id', userData.profile.id)
+            .single();
+          
+          if (profileError) {
+            console.error('❌ Ошибка загрузки профиля:', profileError);
+          } else {
+            console.log('📊 Данные профиля из базы:', profileData);
+            
+            // Проверяем дату
+            if (profileData.premium_until) {
+              const premiumUntil = new Date(profileData.premium_until);
+              const now = new Date();
+              const isActive = premiumUntil > now;
+              
+              console.log('📅 Проверка даты Premium:', {
+                premium_until: premiumUntil,
+                now: now,
+                is_future: isActive,
+                days_left: Math.ceil((premiumUntil - now) / (1000 * 60 * 60 * 24))
+              });
+            }
+          }
+          
+          // Получаем информацию через premiumManager
           const premiumInfo = await getPremiumInfo(userData.profile.id);
+          console.log('🎯 Результат premiumManager:', premiumInfo);
+          
           setUserPremiumInfo(premiumInfo);
+          
         } catch (error) {
-          console.error('Ошибка загрузки Premium статуса:', error);
+          console.error('❌ Ошибка загрузки Premium статуса:', error);
           setUserPremiumInfo({ is_premium: false });
         } finally {
           setCheckingPremium(false);
         }
       } else {
+        console.log('👤 Пользователь не авторизован или нет ID');
         setUserPremiumInfo({ is_premium: false });
       }
     };
@@ -60,11 +98,12 @@ const Subjects = () => {
     loadPremiumStatus();
   }, [isAuthenticated, userData]);
 
-  // Загрузка курсов
+  // Загрузка курсов с улучшенной отладкой
   useEffect(() => {
     const loadCourses = async () => {
       try {
         setLoading(true);
+        console.log('📚 Начинаем загрузку курсов...');
 
         const { data: coursesData, error } = await supabase
           .from('courses')
@@ -73,17 +112,23 @@ const Subjects = () => {
 
         if (error) throw error;
 
+        console.log('✅ Загружено курсов:', coursesData?.length);
+
         // Обогащаем курсы информацией о доступе
-        const enrichedCourses = coursesData?.map(course => ({
-          ...course,
-          // Определяем тип доступа
-          access_type: course.access_type || (course.premium_required_tier ? 'premium' : 'free'),
-          // Цена для платных курсов
-          price: course.price || (course.access_type === 'paid' ? 99000 : 0)
-        })) || [];
+        const enrichedCourses = (coursesData || []).map(course => {
+          // Нормализуем access_type
+          const access_type = course.access_type || 'free';
+          
+          return {
+            ...course,
+            access_type,
+            price: course.price || null
+          };
+        });
 
         setCourses(enrichedCourses);
 
+        // Считаем статистику
         const totalLessons = enrichedCourses.reduce(
           (sum, course) => sum + (course.lessons?.length || 0),
           0
@@ -93,8 +138,26 @@ const Subjects = () => {
           totalLessons,
           totalCourses: enrichedCourses.length,
         });
+
+        console.log('📊 Статистика курсов:', {
+          всего_курсов: enrichedCourses.length,
+          всего_уроков: totalLessons,
+          бесплатные: enrichedCourses.filter(c => c.access_type === 'free').length,
+          премиум: enrichedCourses.filter(c => c.access_type === 'premium').length,
+          платные: enrichedCourses.filter(c => c.access_type === 'paid').length
+        });
+
+        // Выводим информацию о каждом курсе
+        enrichedCourses.forEach((course, i) => {
+          console.log(`${i + 1}. "${course.title}":`, {
+            access_type: course.access_type,
+            price: course.price,
+            lessons: course.lessons?.length || 0
+          });
+        });
+
       } catch (error) {
-        console.error('Ошибка загрузки курсов:', error);
+        console.error('❌ Ошибка загрузки курсов:', error);
       } finally {
         setLoading(false);
       }
@@ -103,40 +166,72 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Проверка доступности курса (ОБНОВЛЕННАЯ ВЕРСИЯ)
+  // Проверка доступности курса (УЛУЧШЕННАЯ ВЕРСИЯ)
   const isCourseAccessible = (course) => {
-    // 1. Бесплатные курсы доступны всем авторизованным пользователям
-    if (course.access_type === 'free') {
-      return isAuthenticated;
+    // Детальная отладка
+    console.log(`\n🔍 ПРОВЕРКА ДОСТУПА: "${course.title}"`);
+    
+    const accessType = course.access_type || 'free';
+    console.log('📊 Данные курса:', {
+      title: course.title,
+      access_type: accessType,
+      price: course.price
+    });
+    
+    console.log('👤 Данные пользователя:', {
+      email: userData?.profile?.email,
+      premium_status: userPremiumInfo?.is_premium ? 'Premium ✅' : 'Не Premium ❌',
+      premium_active: userPremiumInfo?.is_active ? 'Активен ✅' : 'Не активен ❌',
+      days_left: userPremiumInfo?.days_left || 0
+    });
+    
+    // 1. Если не авторизован
+    if (!isAuthenticated) {
+      console.log('❌ Результат: Не авторизован');
+      return false;
     }
-
-    // 2. Если пользователь не авторизован - нет доступа к платным/премиум курсам
-    if (!isAuthenticated) return false;
-
-    // 3. Платные курсы (разовая покупка) - проверяем покупку
-    if (course.access_type === 'paid') {
-      // TODO: Здесь нужно проверить покупку курса через отдельную таблицу
-      // Временно даем доступ Premium пользователям
-      return userPremiumInfo?.is_premium === true;
+    
+    // 2. Бесплатные курсы
+    if (accessType === 'free') {
+      console.log('✅ Результат: Бесплатный курс - доступ разрешен');
+      return true;
     }
-
-    // 4. Премиум курсы - проверяем активный Premium статус
-    if (course.access_type === 'premium') {
-      return userPremiumInfo?.is_premium === true && userPremiumInfo?.is_active === true;
+    
+    // 3. Premium курсы
+    if (accessType === 'premium') {
+      const hasPremium = userPremiumInfo?.is_premium === true;
+      const isActive = userPremiumInfo?.is_active === true;
+      const canAccess = hasPremium && isActive;
+      
+      console.log('🎯 Premium проверка:', {
+        имеет_premium: hasPremium,
+        premium_активен: isActive,
+        может_получить_доступ: canAccess
+      });
+      
+      console.log(canAccess ? '✅ Результат: Premium курс - доступ разрешен' : '❌ Результат: Premium курс - требуется Premium подписка');
+      return canAccess;
     }
-
-    // 5. Для курсов со старой системой премиум
-    if (course.premium_required_tier) {
-      return userPremiumInfo?.is_premium === true;
+    
+    // 4. Платные курсы
+    if (accessType === 'paid') {
+      console.log('💰 Результат: Платный курс - требуется покупка');
+      return false;
     }
-
-    // 6. По умолчанию - проверяем Premium статус
-    return userPremiumInfo?.is_premium === true;
+    
+    console.log(`❓ Результат: Неизвестный тип доступа: ${accessType}`);
+    return false;
   };
 
   // Получить текст кнопки в зависимости от типа курса и статуса пользователя
   const getButtonText = (course) => {
     const accessible = isCourseAccessible(course);
+
+    console.log(`🔄 Получение текста кнопки для "${course.title}":`, {
+      доступен: accessible,
+      тип_курса: course.access_type,
+      премиум_пользователя: userPremiumInfo?.is_premium
+    });
 
     if (!isAuthenticated) {
       return {
@@ -155,7 +250,7 @@ const Subjects = () => {
     if (course.access_type === 'paid') {
       return {
         main: "SOTIB OLISH",
-        sub: `${course.price?.toLocaleString() || '99,000'} UZS →`
+        sub: `${course.price?.toLocaleString() || '100,000'} UZS →`
       };
     }
 
@@ -194,6 +289,7 @@ const Subjects = () => {
       'mobil dasturlash': '📱',
       'rasm chizish': '🎨',
       musiqa: '🎵',
+      test: '🧪',
     };
 
     const lowerTitle = title.toLowerCase();
@@ -226,6 +322,7 @@ const Subjects = () => {
       python: 'https://images.unsplash.com/photo-1526379879527-8559ecfcaec7?w=800&auto=format&fit=crop&q=80',
       javascript: 'https://images.unsplash.com/photo-1627398242454-45a1465c2479?w=800&auto=format&fit=crop&q=80',
       dasturlash: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?w=800&auto=format&fit=crop&q=80',
+      test: 'https://images.unsplash.com/photo-1559757148-5c350d0d3c56?w=800&auto=format&fit=crop&q=80',
     };
 
     const lowerTitle = course.title.toLowerCase();
@@ -240,6 +337,11 @@ const Subjects = () => {
   const getCourseLink = (course) => {
     const accessible = isCourseAccessible(course);
 
+    console.log(`🔗 Получение ссылки для "${course.title}":`, {
+      доступен: accessible,
+      тип_курса: course.access_type
+    });
+
     if (!isAuthenticated) {
       return '/register';
     }
@@ -252,12 +354,25 @@ const Subjects = () => {
       return `/course-buy/${course.id}`;
     }
 
-    if (course.access_type === 'premium' || course.premium_required_tier) {
+    if (course.access_type === 'premium') {
       return '/premium';
     }
 
     return `/subject/${course.id}`;
   };
+
+  // Отображение дебаг информации
+  if (isAuthenticated) {
+    console.log('\n=== СВОДНАЯ ИНФОРМАЦИЯ ===');
+    console.log('Пользователь:', userData?.profile?.email);
+    console.log('Premium статус:', userPremiumInfo);
+    console.log('Количество курсов:', courses.length);
+    
+    courses.forEach((course, i) => {
+      const accessible = isCourseAccessible(course);
+      console.log(`${i + 1}. "${course.title}" (${course.access_type}): ${accessible ? '✅ Доступен' : '❌ Закрыт'}`);
+    });
+  }
 
   if (loading) {
     return (
@@ -274,6 +389,33 @@ const Subjects = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-black dark:via-gray-900 dark:to-purple-950 py-16 px-4 md:px-6">
+      {/* Дебаг панель */}
+      {isAuthenticated && (
+        <div className="fixed top-4 left-4 bg-blue-600 text-white p-4 rounded-lg shadow-xl z-50 max-w-md">
+          <div className="font-bold text-lg mb-2">🔍 ДЕБАГ ИНФОРМАЦИЯ</div>
+          <div><strong>Пользователь:</strong> {userData?.profile?.full_name}</div>
+          <div><strong>Email:</strong> {userData?.profile?.email}</div>
+          <div><strong>Premium статус:</strong> {userPremiumInfo?.is_premium ? '✅ ЕСТЬ' : '❌ НЕТ'}</div>
+          <div><strong>Premium активен:</strong> {userPremiumInfo?.is_active ? '✅ ДА' : '❌ НЕТ'}</div>
+          <div><strong>Осталось дней:</strong> {userPremiumInfo?.days_left || 0}</div>
+          <div className="mt-2 text-sm">
+            <strong>Курсы ({courses.length}):</strong>
+            {courses.map(course => (
+              <div key={course.id}>
+                {course.title}: {course.access_type} → 
+                {isCourseAccessible(course) ? ' ✅' : ' ❌'}
+              </div>
+            ))}
+          </div>
+          <button 
+            onClick={() => location.reload()}
+            className="mt-3 px-3 py-1 bg-white text-blue-600 rounded text-sm font-bold"
+          >
+            Обновить страницу
+          </button>
+        </div>
+      )}
+
       {/* Заголовок */}
       <div className="text-center mb-12 md:mb-20">
         <h1 className="text-5xl md:text-7xl lg:text-8xl font-black mb-6">
@@ -363,7 +505,7 @@ const Subjects = () => {
                             Pullik kurs
                           </p>
                           <p className="text-yellow-400 text-2xl font-bold">
-                            {course.price?.toLocaleString() || '99,000'} UZS
+                            {course.price?.toLocaleString() || '100,000'} UZS
                           </p>
                           <p className="text-gray-200 text-base mt-2">
                             Bir martalik to'lov → Doimiy kirish
