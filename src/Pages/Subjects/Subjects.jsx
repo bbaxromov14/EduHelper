@@ -3,15 +3,19 @@ import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 
+// 🔥 Новый импорт из premiumManager
+import { checkPremiumStatus, getPremiumInfo } from '../../utils/premiumManager';
+
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
-  const [userProfile, setUserProfile] = useState(null);
-  const [courseAccess, setCourseAccess] = useState({});
+
+  // Новый стейт для Premium
+  const [premiumStatus, setPremiumStatus] = useState(null); // null = ещё не проверяли
+  const [premiumLoading, setPremiumLoading] = useState(false);
+
   const { isAuthenticated, userData } = useAuth();
-  
-  const profileLoadedRef = useRef(false);
 
   // Анимация fadeUp
   useEffect(() => {
@@ -20,68 +24,57 @@ const Subjects = () => {
       style.id = 'fadeUpAnimation';
       style.innerHTML = `
         @keyframes fadeUp {
-          from {
-            opacity: 0;
-            transform: translateY(60px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(60px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `;
       document.head.appendChild(style);
     }
-
     return () => {
       const style = document.getElementById('fadeUpAnimation');
       if (style) document.head.removeChild(style);
     };
   }, []);
 
-  // Загружаем профиль пользователя
+  // 🔄 Проверка Premium статуса через premiumManager
   useEffect(() => {
-    const loadUserProfile = async () => {
-      if (!isAuthenticated || !userData?.email || profileLoadedRef.current) {
+    const checkUserPremium = async () => {
+      if (!isAuthenticated || !userData?.id) {
+        setPremiumStatus({ is_active: false });
         return;
       }
 
       try {
-        profileLoadedRef.current = true;
-        console.log('Загрузка профиля для email:', userData.email);
-        
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('email', userData.email)
-          .single();
+        setPremiumLoading(true);
+        console.log('🔍 Проверка Premium для userId:', userData.id);
 
-        if (error) {
-          console.error('Ошибка загрузки профиля:', error);
-          return;
-        }
+        const status = await checkPremiumStatus(userData.id);
+        const info = await getPremiumInfo(userData.id);
 
-        console.log('✅ Загружен профиль из базы:', data);
-        setUserProfile(data);
-        
+        console.log('✅ Premium статус:', status);
+        console.log('ℹ️ Premium info:', info);
+
+        setPremiumStatus({
+          is_active: !!status?.is_active,
+          info: info,
+          email: userData.email
+        });
       } catch (error) {
-        console.error('Ошибка загрузки профиля:', error);
+        console.error('❌ Ошибка проверки Premium:', error);
+        setPremiumStatus({ is_active: false });
+      } finally {
+        setPremiumLoading(false);
       }
     };
 
-    loadUserProfile();
-    
-    return () => {
-      profileLoadedRef.current = false;
-    };
-  }, [isAuthenticated, userData?.email]);
+    checkUserPremium();
+  }, [isAuthenticated, userData?.id]);
 
   // Загрузка курсов
   useEffect(() => {
     const loadCourses = async () => {
       try {
         setLoading(true);
-
         const { data: coursesData, error } = await supabase
           .from('courses')
           .select('*, lessons:lessons(*)')
@@ -90,7 +83,6 @@ const Subjects = () => {
         if (error) throw error;
 
         setCourses(coursesData || []);
-
         const totalLessons = coursesData?.reduce(
           (sum, course) => sum + (course.lessons?.length || 0),
           0
@@ -110,92 +102,126 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Функция проверки доступа
+  // Упрощённая проверка доступа к курсу
   const checkCourseAccess = (course) => {
-    // 1. Бесплатный курс
-    if (course.access_type === 'free') {
-      return isAuthenticated;
-    }
+    if (course.access_type === 'free') return isAuthenticated;
+    if (!isAuthenticated) return false;
+    if (premiumStatus === null || premiumLoading) return false;
 
-    // 2. Пользователь не авторизован
-    if (!isAuthenticated) {
-      return false;
-    }
-
-    // 3. Профиль не загружен
-    if (!userProfile) {
-      return false;
-    }
-
-    // 4. Платный курс
     if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
       return false;
     }
 
-    // 5. Premium курс
     if (course.access_type === 'premium') {
-      const isPremium = userProfile.is_premium === true;
-      const premiumUntil = userProfile.premium_until;
-
-      if (!isPremium) {
-        return false;
-      }
-
-      if (!premiumUntil) {
-        return true;
-      }
-
-      const isActive = new Date(premiumUntil) > new Date();
-      return isActive;
+      return premiumStatus.is_active;
     }
 
     return false;
   };
 
-  // Обновляем доступ при изменении профиля или курсов
-  useEffect(() => {
-    if (courses.length > 0) {
-      const newAccess = {};
-      courses.forEach(course => {
-        newAccess[course.id] = checkCourseAccess(course);
-      });
-      setCourseAccess(newAccess);
-      
-      // Логи для отладки
-      if (userProfile) {
-        console.log('=== ОБНОВЛЕН ДОСТУП К КУРСАМ ===');
-        console.log('Пользователь:', userProfile.email);
-        console.log('is_premium:', userProfile.is_premium);
-        console.log('premium_until:', userProfile.premium_until);
-        console.log('Доступ к курсам:', newAccess);
-      }
-    }
-  }, [userProfile, courses, isAuthenticated]);
+  // Красивый отладочный блок Premium
+  const renderPremiumDebug = () => {
+    if (!premiumStatus || premiumLoading) return null;
+
+    const { is_active, info } = premiumStatus;
+    const daysLeft = info?.days_left || 0;
+
+    return (
+      <div className="max-w-7xl mx-auto mb-8 p-6 bg-gradient-to-r from-emerald-50/90 to-blue-50/90 dark:from-emerald-900/50 dark:to-blue-900/50 rounded-3xl shadow-2xl border border-emerald-200/50 dark:border-emerald-500/30 backdrop-blur-xl">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className={`p-3 rounded-2xl text-3xl transition-all ${
+              is_active
+                ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/25 animate-pulse'
+                : 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/25'
+            }`}>
+              {is_active ? '⭐' : '⚠️'}
+            </div>
+
+            <div>
+              <h3 className="text-2xl font-black text-gray-900 dark:text-white">
+                {premiumStatus.email}
+              </h3>
+              <div className="flex items-center gap-4 mt-2 text-sm">
+                <span className={`px-4 py-2 rounded-xl font-bold text-sm ${
+                  is_active
+                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                    : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
+                }`}>
+                  {is_active ? `АКТИВЕН (${daysLeft} kun qoldi) ✅` : 'PREMIUM YO\'Q ❌'}
+                </span>
+
+                {info?.premium_until && (
+                  <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 rounded-xl font-mono text-xs">
+                    📅 {info.formatted_until}
+                  </span>
+                )}
+
+                {info?.premium_type && (
+                  <span className="px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 rounded-lg text-xs font-bold">
+                    {info.premium_type.toUpperCase()}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={async () => {
+                await checkUserPremium();
+                window.location.reload();
+              }}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl font-bold hover:scale-105 transition-all shadow-lg hover:shadow-xl"
+            >
+              🔄 Yangilash
+            </button>
+
+            {is_active && (
+              <button
+                onClick={() => navigator.clipboard.writeText(JSON.stringify(premiumStatus, null, 2))}
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-mono hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+                title="Копировать JSON"
+              >
+                📋
+              </button>
+            )}
+          </div>
+        </div>
+
+        {is_active && info && (
+          <div className="mt-4 pt-4 border-t border-emerald-200/50 grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+            <div className="text-center p-3 bg-white/60 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+              <div className="text-2xl font-black text-emerald-600">{daysLeft}</div>
+              <div className="text-emerald-700 dark:text-emerald-400">kun qoldi</div>
+            </div>
+            <div className="text-center p-3 bg-white/60 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+              <div className="font-mono text-lg">{info.premium_type}</div>
+              <div className="text-gray-600 dark:text-gray-400">Turi</div>
+            </div>
+            {info.premium_activated_at && (
+              <div className="text-center p-3 bg-white/60 dark:bg-gray-800/50 rounded-xl backdrop-blur">
+                <div className="text-xs font-mono">
+                  {new Date(info.premium_activated_at).toLocaleDateString('uz-UZ')}
+                </div>
+                <div className="text-gray-600 dark:text-gray-400 text-xs">Boshlangan</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Иконка курса
   const getCourseIcon = (title) => {
     const icons = {
-      matematika: '🧮',
-      kimyo: '⚗️',
-      fizika: '⚛️',
-      biologiya: '🔬',
-      'ona tili': '📚',
-      'ingliz tili': '🇬🇧',
-      tarix: '🏛️',
-      geografiya: '🌍',
-      informatika: '💻',
-      python: '🐍',
-      javascript: '⚡',
-      dasturlash: '👨‍💻',
-      'mental arifmetika': '🧠',
-      robototexnika: '🤖',
-      'suniy intellekt': '🤖',
-      'web dasturlash': '🌐',
-      'mobil dasturlash': '📱',
-      'rasm chizish': '🎨',
-      musiqa: '🎵',
+      matematika: '🧮', kimyo: '⚗️', fizika: '⚛️', biologiya: '🔬',
+      'ona tili': '📚', 'ingliz tili': '🇬🇧', tarix: '🏛️', geografiya: '🌍',
+      informatika: '💻', python: '🐍', javascript: '⚡', dasturlash: '👨‍💻',
+      'mental arifmetika': '🧠', robototexnika: '🤖', 'suniy intellekt': '🤖',
+      'web dasturlash': '🌐', 'mobil dasturlash': '📱', 'rasm chizish': '🎨', musiqa: '🎵',
     };
-
     const lowerTitle = title.toLowerCase();
     for (const [key, icon] of Object.entries(icons)) {
       if (lowerTitle.includes(key)) return icon;
@@ -232,7 +258,6 @@ const Subjects = () => {
     for (const [key, image] of Object.entries(defaultImages)) {
       if (lowerTitle.includes(key)) return image;
     }
-
     return 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
   };
 
@@ -268,40 +293,13 @@ const Subjects = () => {
         </div>
       </div>
 
-      {/* Отладка Premium статуса */}
-      {userProfile && (
-        <div className="max-w-7xl mx-auto mb-6 p-4 bg-white/80 dark:bg-gray-800/80 rounded-xl shadow-lg">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-gray-800 dark:text-white">
-                👤 {userProfile.full_name || userProfile.email}
-              </h3>
-              <div className="flex items-center gap-4 mt-2">
-                <span className={`px-3 py-1 rounded-full text-sm font-bold ${userProfile.is_premium ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
-                  ⭐ Premium: {userProfile.is_premium ? 'ДА' : 'НЕТ'}
-                </span>
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full text-sm">
-                  📅 До: {userProfile.premium_until ? new Date(userProfile.premium_until).toLocaleDateString() : 'Вечный'}
-                </span>
-                <span className="px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 rounded-full text-sm">
-                  🎯 Активен: {userProfile.is_premium && (!userProfile.premium_until || new Date(userProfile.premium_until) > new Date()) ? 'ДА' : 'НЕТ'}
-                </span>
-              </div>
-            </div>
-            <button 
-              onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-bold hover:opacity-90 transition"
-            >
-              Обновить
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Новый красивый Premium статус */}
+      {renderPremiumDebug()}
 
       {/* Сетка курсов */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
         {courses.map((course, index) => {
-          const accessible = courseAccess[course.id] || false;
+          const accessible = checkCourseAccess(course);
           const lessonCount = getLessonCount(course);
           const courseImage = getCourseImage(course);
 
@@ -312,8 +310,8 @@ const Subjects = () => {
                 accessible
                   ? `/subject/${course.id}`
                   : course.access_type === 'paid'
-                    ? `/course-buy/${course.id}`
-                    : '/premium'
+                  ? `/course-buy/${course.id}`
+                  : '/premium'
               }
               className="group relative block"
               style={{
@@ -323,29 +321,23 @@ const Subjects = () => {
               }}
             >
               <div
-                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
-                  }`}
+                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${
+                  accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
+                }`}
               >
                 {/* Градиент при ховере */}
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
 
-                {/* Бейдж PREMIUM / PULLIK */}
+                {/* Бейдж блокировки */}
                 {!accessible && (
                   <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
                     <div className="text-center p-6">
                       <div className="text-6xl md:text-8xl mb-4">🔒</div>
-
                       {!isAuthenticated ? (
                         <>
-                          <p className="text-2xl md:text-3xl font-bold text-white mb-4">
-                            Darslarni ko'rish uchun
-                          </p>
-                          <p className="text-3xl md:text-4xl font-black text-yellow-400">
-                            ro'yxatdan o'ting
-                          </p>
-                          <p className="text-gray-200 text-base mt-4">
-                            Bepul va tezkor → Kirish / Ro'yxatdan o'tish
-                          </p>
+                          <p className="text-2xl md:text-3xl font-bold text-white mb-4">Darslarni ko'rish uchun</p>
+                          <p className="text-3xl md:text-4xl font-black text-yellow-400">ro'yxatdan o'ting</p>
+                          <p className="text-gray-200 text-base mt-4">Bepul va tezkor → Kirish / Ro'yxatdan o'tish</p>
                         </>
                       ) : (
                         <>
@@ -382,7 +374,6 @@ const Subjects = () => {
                     <h3 className="text-2xl md:text-3xl font-black text-gray-800 dark:text-white mb-3">
                       {course.title}
                     </h3>
-
                     <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base mb-6 line-clamp-3">
                       {course.description || 'Tavsif mavjud emas'}
                     </p>
@@ -412,21 +403,19 @@ const Subjects = () => {
                           {accessible
                             ? 'OCHIQ'
                             : !isAuthenticated
-                              ? 'RO\'YXATDAN O\'TING'
-                              : course.access_type === 'paid'
-                                ? 'SOTIB OLISH'
-                                : 'PREMIUM'
-                          }
+                            ? "RO'YXATDAN O'TING"
+                            : course.access_type === 'paid'
+                            ? 'SOTIB OLISH'
+                            : 'PREMIUM'}
                         </div>
                         <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
                           {accessible
                             ? 'Kirish →'
                             : !isAuthenticated
-                              ? 'Bepul ro\'yxatdan o\'tish →'
-                              : course.access_type === 'paid'
-                                ? 'Sotib olish →'
-                                : 'Obuna →'
-                          }
+                            ? "Bepul ro'yxatdan o'tish →"
+                            : course.access_type === 'paid'
+                            ? 'Sotib olish →'
+                            : 'Obuna →'}
                         </div>
                       </div>
                     </div>
@@ -435,12 +424,13 @@ const Subjects = () => {
                   {/* Анимированная полоска снизу */}
                   <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
                     <div
-                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${accessible
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                        : course.access_type === 'paid'
+                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${
+                        accessible
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                          : course.access_type === 'paid'
                           ? 'bg-gradient-to-r from-orange-500 to-red-500'
                           : 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                        }`}
+                      }`}
                     />
                   </div>
                 </div>
