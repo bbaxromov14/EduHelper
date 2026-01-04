@@ -2,11 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
+import { checkPremiumStatus, getPremiumInfo } from '../../Utils/premiumManager';
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
+  const [userPremiumInfo, setUserPremiumInfo] = useState(null);
+  const [checkingPremium, setCheckingPremium] = useState(false);
   const { isAuthenticated, userData } = useAuth();
 
   // Анимация fadeUp
@@ -35,6 +38,28 @@ const Subjects = () => {
     };
   }, []);
 
+  // Загрузка Premium статуса пользователя
+  useEffect(() => {
+    const loadPremiumStatus = async () => {
+      if (isAuthenticated && userData?.profile?.id) {
+        setCheckingPremium(true);
+        try {
+          const premiumInfo = await getPremiumInfo(userData.profile.id);
+          setUserPremiumInfo(premiumInfo);
+        } catch (error) {
+          console.error('Ошибка загрузки Premium статуса:', error);
+          setUserPremiumInfo({ is_premium: false });
+        } finally {
+          setCheckingPremium(false);
+        }
+      } else {
+        setUserPremiumInfo({ is_premium: false });
+      }
+    };
+
+    loadPremiumStatus();
+  }, [isAuthenticated, userData]);
+
   // Загрузка курсов
   useEffect(() => {
     const loadCourses = async () => {
@@ -48,16 +73,25 @@ const Subjects = () => {
 
         if (error) throw error;
 
-        setCourses(coursesData || []);
+        // Обогащаем курсы информацией о доступе
+        const enrichedCourses = coursesData?.map(course => ({
+          ...course,
+          // Определяем тип доступа
+          access_type: course.access_type || (course.premium_required_tier ? 'premium' : 'free'),
+          // Цена для платных курсов
+          price: course.price || (course.access_type === 'paid' ? 99000 : 0)
+        })) || [];
 
-        const totalLessons = coursesData?.reduce(
+        setCourses(enrichedCourses);
+
+        const totalLessons = enrichedCourses.reduce(
           (sum, course) => sum + (course.lessons?.length || 0),
           0
-        ) || 0;
+        );
 
         setStats({
           totalLessons,
-          totalCourses: coursesData?.length || 0,
+          totalCourses: enrichedCourses.length,
         });
       } catch (error) {
         console.error('Ошибка загрузки курсов:', error);
@@ -69,26 +103,73 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Проверка доступности курса по новой системе (Start/Blaze/Platinum)
+  // Проверка доступности курса (ОБНОВЛЕННАЯ ВЕРСИЯ)
   const isCourseAccessible = (course) => {
-    if (course.access_type === 'free' || course.premium_required_tier === 'free') {
+    // 1. Бесплатные курсы доступны всем авторизованным пользователям
+    if (course.access_type === 'free') {
       return isAuthenticated;
     }
 
+    // 2. Если пользователь не авторизован - нет доступа к платным/премиум курсам
     if (!isAuthenticated) return false;
 
-    const userTier = userData?.profile?.premium_tier || 'free';
-    const premiumUntil = userData?.profile?.premium_until;
-    const isPremiumActive = premiumUntil && new Date(premiumUntil) > new Date();
-
-    if (!isPremiumActive && userData?.profile?.lifetime_premium !== true) {
-      return false;
+    // 3. Платные курсы (разовая покупка) - проверяем покупку
+    if (course.access_type === 'paid') {
+      // TODO: Здесь нужно проверить покупку курса через отдельную таблицу
+      // Временно даем доступ Premium пользователям
+      return userPremiumInfo?.is_premium === true;
     }
 
-    const tierOrder = { free: 0, start: 1, blaze: 2, platinum: 3 };
-    const requiredTier = course.premium_required_tier || 'free';
+    // 4. Премиум курсы - проверяем активный Premium статус
+    if (course.access_type === 'premium') {
+      return userPremiumInfo?.is_premium === true && userPremiumInfo?.is_active === true;
+    }
 
-    return tierOrder[userTier] >= tierOrder[requiredTier];
+    // 5. Для курсов со старой системой премиум
+    if (course.premium_required_tier) {
+      return userPremiumInfo?.is_premium === true;
+    }
+
+    // 6. По умолчанию - проверяем Premium статус
+    return userPremiumInfo?.is_premium === true;
+  };
+
+  // Получить текст кнопки в зависимости от типа курса и статуса пользователя
+  const getButtonText = (course) => {
+    const accessible = isCourseAccessible(course);
+
+    if (!isAuthenticated) {
+      return {
+        main: "RO'YXATDAN O'TING",
+        sub: "Bepul ro'yxatdan o'tish →"
+      };
+    }
+
+    if (accessible) {
+      return {
+        main: "OCHIQ",
+        sub: "Kirish →"
+      };
+    }
+
+    if (course.access_type === 'paid') {
+      return {
+        main: "SOTIB OLISH",
+        sub: `${course.price?.toLocaleString() || '99,000'} UZS →`
+      };
+    }
+
+    if (course.access_type === 'premium') {
+      return {
+        main: "PREMIUM",
+        sub: userPremiumInfo?.is_premium ? "Obuna faollashtiring →" : "Obuna →"
+      };
+    }
+
+    return {
+      main: "KIRISH",
+      sub: "Darslarni boshlash →"
+    };
   };
 
   // Иконка курса
@@ -155,6 +236,29 @@ const Subjects = () => {
     return 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
   };
 
+  // Получить URL для перехода
+  const getCourseLink = (course) => {
+    const accessible = isCourseAccessible(course);
+
+    if (!isAuthenticated) {
+      return '/register';
+    }
+
+    if (accessible) {
+      return `/subject/${course.id}`;
+    }
+
+    if (course.access_type === 'paid') {
+      return `/course-buy/${course.id}`;
+    }
+
+    if (course.access_type === 'premium' || course.premium_required_tier) {
+      return '/premium';
+    }
+
+    return `/subject/${course.id}`;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-black dark:via-gray-900 dark:to-purple-950 py-16 px-6 flex items-center justify-center">
@@ -177,6 +281,24 @@ const Subjects = () => {
             Barcha Kurslar
           </span>
         </h1>
+        
+        {/* Информация о Premium статусе */}
+        {isAuthenticated && userPremiumInfo && (
+          <div className="mb-6">
+            {userPremiumInfo.is_premium ? (
+              <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-full text-lg font-bold shadow-lg">
+                <span className="text-2xl">⭐</span>
+                <span>PREMIUM: {userPremiumInfo.days_left} kun qoldi</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-3 px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-600 text-white rounded-full text-lg font-bold shadow-lg">
+                <span className="text-2xl">🔓</span>
+                <span>Premium kurslarni ochish uchun obuna sotib oling</span>
+              </div>
+            )}
+          </div>
+        )}
+
         <p className="text-xl md:text-2xl lg:text-3xl text-gray-700 dark:text-gray-300 font-medium mb-6">
           {stats.totalCourses} kurs • {stats.totalLessons} dars
         </p>
@@ -193,17 +315,13 @@ const Subjects = () => {
           const accessible = isCourseAccessible(course);
           const lessonCount = getLessonCount(course);
           const courseImage = getCourseImage(course);
+          const buttonText = getButtonText(course);
+          const courseLink = getCourseLink(course);
 
           return (
             <NavLink
               key={course.id}
-              to={
-                accessible
-                  ? `/subject/${course.id}`
-                  : course.access_type === 'paid'
-                    ? `/course-buy/${course.id}`   // Платный курс — разовая покупка
-                    : '/premium'                    // Премиум по подписке
-              }
+              to={courseLink}
               className="group relative block"
               style={{
                 animation: 'fadeUp 0.9s ease-out forwards',
@@ -212,40 +330,58 @@ const Subjects = () => {
               }}
             >
               <div
-                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
-                  }`}
+                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${
+                  accessible 
+                    ? 'border-gray-200 dark:border-gray-700' 
+                    : 'border-yellow-500 dark:border-yellow-600'
+                }`}
               >
                 {/* Градиент при ховере */}
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
 
-                {/* Бейдж PREMIUM / PULLIK */}
+                {/* Overlay для недоступных курсов */}
                 {!accessible && (
-                  <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
-                    <div className="text-center p-6">
+                  <div className="absolute inset-0 bg-black/70 dark:bg-black/80 z-20 flex items-center justify-center rounded-3xl p-6">
+                    <div className="text-center">
                       <div className="text-6xl md:text-8xl mb-4">🔒</div>
-
-                      {/* Если пользователь НЕ авторизован — просим зарегистрироваться */}
+                      
                       {!isAuthenticated ? (
                         <>
                           <p className="text-2xl md:text-3xl font-bold text-white mb-4">
                             Darslarni ko'rish uchun
                           </p>
-                          <p className="text-3xl md:text-4xl font-black text-yellow-400">
+                          <p className="text-3xl md:text-4xl font-black text-yellow-400 mb-2">
                             ro'yxatdan o'ting
                           </p>
-                          <p className="text-gray-200 text-base mt-4">
+                          <p className="text-gray-200 text-base">
                             Bepul va tezkor → Kirish / Ro'yxatdan o'tish
                           </p>
                         </>
-                      ) : (
-                        /* Если авторизован, но нет премиума или платный курс */
+                      ) : course.access_type === 'paid' ? (
                         <>
-                          <p className="text-2xl md:text-3xl font-bold text-white">
-                            {course.access_type === 'paid' ? 'Pullik kurs' : 'Premium kurs'}
+                          <p className="text-2xl md:text-3xl font-bold text-white mb-2">
+                            Pullik kurs
+                          </p>
+                          <p className="text-yellow-400 text-2xl font-bold">
+                            {course.price?.toLocaleString() || '99,000'} UZS
                           </p>
                           <p className="text-gray-200 text-base mt-2">
-                            {course.access_type === 'paid' ? 'Sotib olish →' : 'Obuna orqali oching'}
+                            Bir martalik to'lov → Doimiy kirish
                           </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-2xl md:text-3xl font-bold text-white mb-2">
+                            Premium kurs
+                          </p>
+                          <p className="text-gray-200 text-base">
+                            Obuna orqali oching
+                          </p>
+                          {userPremiumInfo?.is_premium && !userPremiumInfo?.is_active && (
+                            <p className="text-red-300 text-sm mt-2">
+                              Premium obunangiz tugagan. Qayta faollashtiring.
+                            </p>
+                          )}
                         </>
                       )}
                     </div>
@@ -263,8 +399,24 @@ const Subjects = () => {
                       onError={(e) => (e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80')}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    
+                    {/* Иконка курса */}
                     <div className="absolute top-4 left-4 text-4xl md:text-6xl bg-black/60 backdrop-blur-md rounded-2xl p-3 border border-white/20">
                       {getCourseIcon(course.title)}
+                    </div>
+                    
+                    {/* Бейдж типа курса */}
+                    <div className="absolute top-4 right-4">
+                      <div className={`px-4 py-2 rounded-full text-sm font-bold backdrop-blur-md ${
+                        course.access_type === 'free' 
+                          ? 'bg-green-500/80 text-white' 
+                          : course.access_type === 'paid'
+                          ? 'bg-blue-500/80 text-white'
+                          : 'bg-yellow-500/80 text-black'
+                      }`}>
+                        {course.access_type === 'free' ? '🆓 Bepul' : 
+                         course.access_type === 'paid' ? '💰 Pullik' : '⭐ Premium'}
+                      </div>
                     </div>
                   </div>
 
@@ -299,25 +451,15 @@ const Subjects = () => {
                         <div className="text-sm text-gray-500 dark:text-gray-400">ta dars</div>
                       </div>
                       <div className="text-right">
-                        <div className={`text-xl md:text-2xl font-black ${accessible ? 'text-green-500' : 'text-yellow-500'}`}>
-                          {accessible
-                            ? 'OCHIQ'
-                            : !isAuthenticated
-                              ? 'RO\'YXATDAN O\'TING'
-                              : course.access_type === 'paid'
-                                ? 'SOTIB OLISH'
-                                : 'PREMIUM'
-                          }
+                        <div className={`text-xl md:text-2xl font-black ${
+                          accessible ? 'text-green-500' : 
+                          course.access_type === 'paid' ? 'text-blue-500' : 
+                          'text-yellow-500'
+                        }`}>
+                          {buttonText.main}
                         </div>
                         <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
-                          {accessible
-                            ? 'Kirish →'
-                            : !isAuthenticated
-                              ? 'Bepul ro\'yxatdan o\'tish →'
-                              : course.access_type === 'paid'
-                                ? 'Sotib olish →'
-                                : 'Obuna →'
-                          }
+                          {buttonText.sub}
                         </div>
                       </div>
                     </div>
@@ -326,12 +468,13 @@ const Subjects = () => {
                   {/* Анимированная полоска снизу */}
                   <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
                     <div
-                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${accessible
-                        ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                        : course.access_type === 'paid'
-                          ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${
+                        accessible
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                          : course.access_type === 'paid'
+                          ? 'bg-gradient-to-r from-blue-500 to-indigo-500'
                           : 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                        }`}
+                      }`}
                     />
                   </div>
                 </div>
@@ -354,6 +497,24 @@ const Subjects = () => {
           >
             Admin panelga o'tish
           </NavLink>
+        </div>
+      )}
+
+      {/* Баннер Premium */}
+      {isAuthenticated && !userPremiumInfo?.is_premium && (
+        <div className="mt-16 text-center">
+          <div className="max-w-4xl mx-auto bg-gradient-to-r from-purple-600 via-pink-600 to-orange-600 rounded-3xl p-10 text-white">
+            <h3 className="text-4xl font-black mb-4">Premium Obuna Sotib Oling!</h3>
+            <p className="text-xl mb-6">
+              Barcha kurslarga cheksiz kirish, reklamasiz tajriba va maxsus imkoniyatlar
+            </p>
+            <NavLink
+              to="/premium"
+              className="inline-block px-10 py-5 bg-white text-purple-700 text-2xl font-bold rounded-full hover:scale-105 transition"
+            >
+              Premiumni faollashtirish →
+            </NavLink>
+          </div>
         </div>
       )}
 
