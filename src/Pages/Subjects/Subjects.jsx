@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
-import { checkPremiumStatus, getPremiumInfo } from '../../utils/premiumManager'; // Исправлен импорт
+import { checkPremiumStatus, getPremiumInfo } from '../../Utils/premiumManager'; // Исправлен импорт
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
