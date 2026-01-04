@@ -3,18 +3,15 @@ import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 
-// 🔥 ПРАВИЛЬНЫЙ ИМПОРТ — через объект по умолчанию
+// Правильный импорт
 import premiumManager from '../../Utils/premiumManager';
-// Если у вас папка называется с маленькой буквы — используйте:
-// import premiumManager from '../../utils/premiumManager';
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
 
-  // Состояние Premium
-  const [premiumStatus, setPremiumStatus] = useState(null); // null = ещё не проверяли
+  const [premiumStatus, setPremiumStatus] = useState(null);
   const [premiumLoading, setPremiumLoading] = useState(false);
 
   const { isAuthenticated, userData } = useAuth();
@@ -48,18 +45,12 @@ const Subjects = () => {
 
       try {
         setPremiumLoading(true);
-        console.log('Проверка Premium для userId:', userData.id);
-
-        // Используем методы через объект premiumManager
         const status = await premiumManager.checkPremiumStatus(userData.id);
         const info = await premiumManager.getPremiumInfo(userData.id);
 
-        console.log('Premium статус:', status);
-        console.log('Premium info:', info);
-
         setPremiumStatus({
           is_active: !!status?.is_active,
-          info: info,
+          info: info || { is_premium: false },
           email: userData.email
         });
       } catch (error) {
@@ -105,18 +96,15 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Проверка доступа к курсу
   const checkCourseAccess = (course) => {
     if (course.access_type === 'free') return isAuthenticated;
     if (!isAuthenticated) return false;
     if (premiumStatus === null || premiumLoading) return false;
 
-    // Платные курсы — пока не поддерживаем покупку в этом компоненте
     if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
       return false;
     }
 
-    // Premium-курсы
     if (course.access_type === 'premium_only' || course.access_type === 'premium') {
       return premiumStatus.is_active;
     }
@@ -124,7 +112,31 @@ const Subjects = () => {
     return true;
   };
 
-  // Блок отладки Premium
+  // Обновление Premium по кнопке — с проверкой userData
+  const refreshPremiumStatus = async () => {
+    if (!isAuthenticated || !userData?.id) {
+      setPremiumStatus({ is_active: false });
+      return;
+    }
+
+    try {
+      setPremiumLoading(true);
+      const status = await premiumManager.checkPremiumStatus(userData.id);
+      const info = await premiumManager.getPremiumInfo(userData.id);
+
+      setPremiumStatus({
+        is_active: !!status?.is_active,
+        info: info || { is_premium: false },
+        email: userData.email
+      });
+    } catch (error) {
+      console.error('Ошибка обновления Premium:', error);
+      alert('Premium статусни янгилашда хатолик');
+    } finally {
+      setPremiumLoading(false);
+    }
+  };
+
   const renderPremiumDebug = () => {
     if (!premiumStatus || premiumLoading) return null;
 
@@ -137,31 +149,31 @@ const Subjects = () => {
           <div className="flex items-center gap-4">
             <div className={`p-3 rounded-2xl text-3xl transition-all ${
               is_active
-                ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg shadow-emerald-500/25 animate-pulse'
-                : 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg shadow-orange-500/25'
+                ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg animate-pulse'
+                : 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg'
             }`}>
               {is_active ? '⭐' : '⚠️'}
             </div>
 
             <div>
               <h3 className="text-2xl font-black text-gray-900 dark:text-white">
-                {premiumStatus.email}
+                {premiumStatus.email || 'Foydalanuvchi'}
               </h3>
-              <div className="flex items-center gap-4 mt-2 text-sm">
+              <div className="flex flex-wrap items-center gap-3 mt-2">
                 <span className={`px-4 py-2 rounded-xl font-bold text-sm ${
                   is_active
                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
                     : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
                 }`}>
-                  {is_active 
-                    ? info?.premium_type === 'lifetime' 
-                      ? 'ПОЖИЗНЕННЫЙ PREMIUM ✅' 
+                  {is_active
+                    ? info?.premium_type === 'lifetime'
+                      ? 'ПОЖИЗНЕННЫЙ PREMIUM ✅'
                       : `АКТИВЕН (${daysLeft} kun qoldi) ✅`
                     : 'PREMIUM YO\'Q ❌'}
                 </span>
 
                 {info?.formatted_until && info.premium_type !== 'lifetime' && (
-                  <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 rounded-xl font-mono text-xs">
+                  <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 rounded-xl text-xs font-mono">
                     📅 {info.formatted_until}
                   </span>
                 )}
@@ -175,30 +187,19 @@ const Subjects = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={async () => {
-                setPremiumLoading(true);
-                const status = await premiumManager.checkPremiumStatus(userData.id);
-                const info = await premiumManager.getPremiumInfo(userData.id);
-                setPremiumStatus({
-                  is_active: !!status?.is_active,
-                  info,
-                  email: userData.email
-                });
-                setPremiumLoading(false);
-              }}
-              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl font-bold hover:scale-105 transition-all shadow-lg hover:shadow-xl"
-            >
-              🔄 Yangilash
-            </button>
-          </div>
+          <button
+            onClick={refreshPremiumStatus}
+            disabled={premiumLoading}
+            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl font-bold hover:scale-105 transition-all shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {premiumLoading ? 'Yangilanmoqda...' : '🔄 Yangilash'}
+          </button>
         </div>
       </div>
     );
   };
 
-  // Иконка курса
+  // Остальные функции (getCourseIcon, getLessonCount, getCourseImage) — без изменений
   const getCourseIcon = (title) => {
     const icons = {
       matematika: '🧮', kimyo: '⚗️', fizika: '⚛️', biologiya: '🔬',
@@ -214,12 +215,8 @@ const Subjects = () => {
     return '📖';
   };
 
-  // Количество уроков
-  const getLessonCount = (course) => {
-    return course.lessons?.length || 0;
-  };
+  const getLessonCount = (course) => course.lessons?.length || 0;
 
-  // Изображение курса
   const getCourseImage = (course) => {
     if (course.cover_image_url?.startsWith('http')) return course.cover_image_url;
 
@@ -260,7 +257,6 @@ const Subjects = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-black dark:via-gray-900 dark:to-purple-950 py-16 px-4 md:px-6">
-      {/* Заголовок */}
       <div className="text-center mb-12 md:mb-20">
         <h1 className="text-5xl md:text-7xl lg:text-8xl font-black mb-6">
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
@@ -277,10 +273,8 @@ const Subjects = () => {
         </div>
       </div>
 
-      {/* Premium статус */}
       {renderPremiumDebug()}
 
-      {/* Сетка курсов */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
         {courses.map((course, index) => {
           const accessible = checkCourseAccess(course);
@@ -304,14 +298,11 @@ const Subjects = () => {
                 opacity: 0,
               }}
             >
-              <div
-                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${
-                  accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
-                }`}
-              >
+              <div className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${
+                accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
+              }`}>
                 <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
 
-                {/* Блокировка */}
                 {!accessible && (
                   <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
                     <div className="text-center p-6">
@@ -390,15 +381,13 @@ const Subjects = () => {
                   </div>
 
                   <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
-                    <div
-                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${
-                        accessible
-                          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-                          : course.access_type === 'paid'
-                          ? 'bg-gradient-to-r from-orange-500 to-red-500'
-                          : 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                      }`}
-                    />
+                    <div className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${
+                      accessible
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                        : course.access_type === 'paid'
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                        : 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                    }`} />
                   </div>
                 </div>
               </div>
@@ -407,7 +396,6 @@ const Subjects = () => {
         })}
       </div>
 
-      {/* Пустое состояние */}
       {courses.length === 0 && !loading && (
         <div className="text-center py-20">
           <div className="text-6xl mb-6">📚</div>
@@ -423,7 +411,6 @@ const Subjects = () => {
         </div>
       )}
 
-      {/* Футер */}
       <div className="mt-20 text-center text-gray-500 dark:text-gray-400">
         <p className="text-lg">© {new Date().getFullYear()} EDUHELPER UZ</p>
         <p className="text-sm mt-2">
