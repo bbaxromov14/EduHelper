@@ -107,68 +107,67 @@ const Subjects = () => {
   }, []);
 
   const isCourseAccessible = (course) => {
-    // 1. Проверяем поле is_free (boolean)
-    if (course.is_free === true) {
-      return isAuthenticated;
-    }
-  
-    // 2. Проверяем access_type (text)
+    console.log('📋 Проверка доступа к курсу:', {
+      title: course.title,
+      access_type: course.access_type,
+      userAuthenticated: isAuthenticated,
+      userProfileLoaded: !!userProfile,
+      userEmail: userProfile?.email
+    });
+
+    // 1. Бесплатный курс — только авторизация
     if (course.access_type === 'free') {
+      console.log('✅ Бесплатный курс по access_type');
       return isAuthenticated;
     }
-  
-    // 3. Пользователь не авторизован
-    if (!isAuthenticated) return false;
-  
-    // 4. Получаем данные из профиля
-    if (!userProfile) {
-      console.log('⚠️ Профиль пользователя еще не загружен');
+
+    // 2. Пользователь не авторизован
+    if (!isAuthenticated) {
+      console.log('❌ Пользователь не авторизован');
       return false;
     }
-  
-    // 5. Платный курс (paid или price > 0)
-    if (course.access_type === 'paid' || (course.price && course.price > 0)) {
-      console.log('💰 Платный курс:', course.title, 'Цена:', course.price);
-      // TODO: Проверить покупку в таблице course_purchases или user_courses
-      return false; // Показываем кнопку покупки
+
+    // 3. Ждем загрузки профиля
+    if (!userProfile) {
+      console.log('⏳ Ждем загрузки профиля... возвращаем false временно');
+      return false; // Временно false, пока грузится профиль
     }
-  
-    // 6. Premium курс
+
+    // 4. Платный курс
+    if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
+      console.log('💰 Платный курс - нужна покупка');
+      return false;
+    }
+
+    // 5. Premium курс
     if (course.access_type === 'premium') {
       const isPremium = userProfile.is_premium === true;
       const premiumUntil = userProfile.premium_until;
-      
-      console.log('🔐 Premium проверка для курса:', course.title, {
-        isPremium,
-        premiumUntil,
-        now: new Date(),
+
+      console.log('🔐 Premium проверка:', {
+        title: course.title,
+        userPremium: isPremium,
+        premiumUntil: premiumUntil,
+        currentTime: new Date(),
         premiumUntilDate: premiumUntil ? new Date(premiumUntil) : null,
         isFuture: premiumUntil ? new Date(premiumUntil) > new Date() : false
       });
-  
+
       if (!isPremium) {
         console.log('❌ Пользователь не имеет Premium статуса');
         return false;
       }
-      
-      // Если premium_until null — считаем вечным Premium
+
       if (!premiumUntil) {
         console.log('✅ Premium вечный (premium_until = null)');
         return true;
       }
-      
+
       const isActive = new Date(premiumUntil) > new Date();
       console.log(isActive ? '✅ Premium активен' : '❌ Premium истек');
       return isActive;
     }
-  
-    // 7. По умолчанию — доступ закрыт
-    console.log('ℹ️ Неизвестный тип доступа:', {
-      title: course.title,
-      access_type: course.access_type,
-      is_free: course.is_free,
-      price: course.price
-    });
+
     return false;
   };
 
@@ -179,11 +178,11 @@ const Subjects = () => {
       console.log('👤 Email:', userProfile.email);
       console.log('⭐ is_premium:', userProfile.is_premium);
       console.log('📅 premium_until:', userProfile.premium_until);
-      console.log('🎯 Premium активен?:', 
-        userProfile.is_premium === true && 
+      console.log('🎯 Premium активен?:',
+        userProfile.is_premium === true &&
         (!userProfile.premium_until || new Date(userProfile.premium_until) > new Date())
       );
-      
+
       // Проверяем конкретно для eduhelperuz@gmail.com
       if (userProfile.email === 'eduhelperuz@gmail.com') {
         console.log('🎯 ЭТО EDUHELPER ADMIN!');
@@ -309,7 +308,7 @@ const Subjects = () => {
                 </span>
               </div>
             </div>
-            <button 
+            <button
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-bold hover:opacity-90 transition"
             >
