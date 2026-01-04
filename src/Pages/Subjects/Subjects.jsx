@@ -10,35 +10,39 @@ const Subjects = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
 
-  // Скрытый стейт Premium — только для логики доступа
   const [premiumStatus, setPremiumStatus] = useState({ is_active: false });
 
-  const { isAuthenticated, userData } = useAuth();
+  const { isAuthenticated, user } = useAuth(); // ← Только user из auth!
 
-  // Функция обновления статуса Premium
+  const currentUserId = user?.id;
+
+  // Функция обновления статуса
   const updatePremiumStatus = async () => {
-    if (!isAuthenticated || !userData?.id) {
+    if (!isAuthenticated || !currentUserId) {
       setPremiumStatus({ is_active: false });
       return;
     }
 
     try {
-      const status = await premiumManager.checkPremiumStatus(userData.id);
-      setPremiumStatus({ is_active: !!status?.is_active });
+      const status = await premiumManager.checkPremiumStatus(currentUserId);
+      const newStatus = !!status?.is_active;
+      setPremiumStatus({ is_active: newStatus });
+
+      console.log('Premium статус обновлён:', newStatus ? 'АКТИВЕН ⭐' : 'НЕАКТИВЕН');
     } catch (error) {
       console.error('Ошибка проверки Premium:', error);
       setPremiumStatus({ is_active: false });
     }
   };
 
-  // Первичная загрузка
+  // Первичная проверка при монтировании и изменении auth
   useEffect(() => {
     updatePremiumStatus();
-  }, [isAuthenticated, userData?.id]);
+  }, [isAuthenticated, currentUserId]);
 
-  // 🔥 Автоматическое обновление при изменении профиля в Supabase (Realtime)
+  // Realtime-подписка на изменения профиля
   useEffect(() => {
-    if (!isAuthenticated || !userData?.id) return;
+    if (!isAuthenticated || !currentUserId) return;
 
     const channel = supabase
       .channel('premium-profile-changes')
@@ -48,10 +52,10 @@ const Subjects = () => {
           event: 'UPDATE',
           schema: 'public',
           table: 'profiles',
-          filter: `id=eq.${userData.id}`
+          filter: `id=eq.${currentUserId}`
         },
-        () => {
-          // При любом изменении профиля (is_premium, premium_until и т.д.) — обновляем статус
+        (payload) => {
+          console.log('Профиль обновлён через Realtime:', payload.new);
           updatePremiumStatus();
         }
       )
@@ -60,7 +64,7 @@ const Subjects = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAuthenticated, userData?.id]);
+  }, [isAuthenticated, currentUserId]);
 
   // Загрузка курсов
   useEffect(() => {
@@ -75,6 +79,7 @@ const Subjects = () => {
         if (error) throw error;
 
         setCourses(coursesData || []);
+
         const totalLessons = coursesData?.reduce(
           (sum, course) => sum + (course.lessons?.length || 0),
           0
@@ -94,23 +99,17 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Проверка доступа к курсу — теперь использует скрытый premiumStatus
+  // Проверка доступа — упрощённая и надёжная
   const checkCourseAccess = (course) => {
-    if (course.access_type === 'free') return isAuthenticated;
-    if (!isAuthenticated) return false;
+    if (!isAuthenticated) return course.access_type === 'free';
+    if (course.access_type === 'free') return true;
+    if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) return false;
 
-    if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
-      return false;
-    }
-
-    if (course.access_type === 'premium_only' || course.access_type === 'premium') {
-      return premiumStatus.is_active;
-    }
-
-    return true;
+    // Всё остальное (premium, premium_only и т.д.) — открыто при активном Premium
+    return premiumStatus.is_active;
   };
 
-  // Анимация fadeUp (оставляем)
+  // Анимация fadeUp
   useEffect(() => {
     if (!document.getElementById('fadeUpAnimation')) {
       const style = document.createElement('style');
@@ -129,6 +128,7 @@ const Subjects = () => {
     };
   }, []);
 
+  // Остальные функции без изменений
   const getCourseIcon = (title) => {
     const icons = {
       matematika: '🧮', kimyo: '⚗️', fizika: '⚛️', biologiya: '🔬',
@@ -186,6 +186,7 @@ const Subjects = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-black dark:via-gray-900 dark:to-purple-950 py-16 px-4 md:px-6">
+      {/* Заголовок */}
       <div className="text-center mb-12 md:mb-20">
         <h1 className="text-5xl md:text-7xl lg:text-8xl font-black mb-6">
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
@@ -202,8 +203,7 @@ const Subjects = () => {
         </div>
       </div>
 
-      {/* Блок Premium статуса полностью удалён — ничего не показывается */}
-
+      {/* Сетка курсов */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
         {courses.map((course, index) => {
           const accessible = checkCourseAccess(course);
@@ -255,7 +255,6 @@ const Subjects = () => {
                   </div>
                 )}
 
-                {/* Остальной UI карточки курса — без изменений */}
                 <div className="relative h-full flex flex-col">
                   <div className="relative h-48 md:h-64 overflow-hidden">
                     <img
@@ -326,7 +325,6 @@ const Subjects = () => {
         })}
       </div>
 
-      {/* Пустое состояние и футер — без изменений */}
       {courses.length === 0 && !loading && (
         <div className="text-center py-20">
           <div className="text-6xl mb-6">📚</div>
