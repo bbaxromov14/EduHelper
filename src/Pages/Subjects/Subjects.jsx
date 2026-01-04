@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 
 // 🔥 Новый импорт из premiumManager
-import { checkPremiumStatus, getPremiumInfo } from '../../utils/premiumManager';
+import { checkPremiumStatus, getPremiumInfo } from '../../Utils/premiumManager';
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
