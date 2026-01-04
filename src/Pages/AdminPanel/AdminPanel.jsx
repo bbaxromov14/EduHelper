@@ -4,7 +4,7 @@ import { useAuth } from "../../context/ReactContext.jsx";
 import { supabase } from '../../lib/supabase';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from "uuid"; // npm install uuid
-import { activatePremium } from '../../Utils/premiumManager';
+import premiumManager from '../../Utils/premiumManager';
 
 
 const AdminPanel = () => {
@@ -627,19 +627,21 @@ const AdminPanel = () => {
                 }
 
                 try {
-                  setLoading(true); // опционально, если хочешь показать индикатор
+                  setLoading(true);
 
-                  const result = await activatePremium(user.id, {
+                  // ← ИСПРАВЛЕННЫЙ ВЫЗОВ
+                  const result = await premiumManager.activatePremium(user.id, {
                     days: 365,
                     type: 'yearly',
                     transactionId: `admin-manual-${Date.now()}`
                   });
 
-                  console.log('✅ Premium активирован!', result);
-                  alert(`Premium успешно активирован!\nДо: ${new Date(result.premium_until).toLocaleDateString('uz-UZ')}`);
+                  console.log('Premium активирован!', result);
 
-                  // Опционально: обновить страницу
-                  window.location.reload();
+                  if (result.success) {
+                    alert(`Premium успешно активирован!\nТип: ${result.data.premium_type}\nДо: ${result.premium_until === 'lifetime' ? 'ПОЖИЗНЕННО' : new Date(result.premium_until).toLocaleDateString('uz-UZ')}`);
+                    window.location.reload();
+                  }
                 } catch (err) {
                   console.error('Ошибка активации Premium:', err);
                   alert('Ошибка: ' + (err.message || 'Неизвестная ошибка'));
@@ -649,7 +651,7 @@ const AdminPanel = () => {
               }}
               className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold rounded-xl shadow-lg transition transform hover:scale-105"
             >
-              🔥 Активировать Premium (1 год)
+              Активировать Premium (1 год)
             </button>
             <button
               onClick={() => navigate('/')}
