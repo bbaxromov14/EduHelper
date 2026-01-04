@@ -617,25 +617,39 @@ const AdminPanel = () => {
           <div className="flex gap-4">
             <button
               onClick={async () => {
-                if (!userData?.id) return alert('Войдите в аккаунт');
+                if (!user?.id) {
+                  alert('Сначала войдите в аккаунт');
+                  return;
+                }
+
+                if (!confirm('Активировать Premium на 1 год для текущего пользователя?')) {
+                  return;
+                }
 
                 try {
-                  const result = await activatePremium(userData.id, {
-                    days: 365,           // 1 год
+                  setLoading(true); // опционально, если хочешь показать индикатор
+
+                  const result = await activatePremium(user.id, {
+                    days: 365,
                     type: 'yearly',
-                    transactionId: 'test-2026-manual'
+                    transactionId: `admin-manual-${Date.now()}`
                   });
-                  console.log('Premium активирован!', result);
-                  alert('Premium успешно активирован на 1 год!');
+
+                  console.log('✅ Premium активирован!', result);
+                  alert(`Premium успешно активирован!\nДо: ${new Date(result.premium_until).toLocaleDateString('uz-UZ')}`);
+
+                  // Опционально: обновить страницу
                   window.location.reload();
                 } catch (err) {
-                  console.error(err);
-                  alert('Ошибка: ' + err.message);
+                  console.error('Ошибка активации Premium:', err);
+                  alert('Ошибка: ' + (err.message || 'Неизвестная ошибка'));
+                } finally {
+                  setLoading(false);
                 }
               }}
-              className="px-6 py-3 bg-green-600 text-white rounded-lg font-bold"
+              className="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold rounded-xl shadow-lg transition transform hover:scale-105"
             >
-              🔥 Активировать Premium (тест)
+              🔥 Активировать Premium (1 год)
             </button>
             <button
               onClick={() => navigate('/')}
