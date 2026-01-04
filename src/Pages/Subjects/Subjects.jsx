@@ -111,33 +111,33 @@ const Subjects = () => {
     if (course.is_free === true) {
       return isAuthenticated;
     }
-
+  
     // 2. Проверяем access_type (text)
     if (course.access_type === 'free') {
       return isAuthenticated;
     }
-
+  
     // 3. Пользователь не авторизован
     if (!isAuthenticated) return false;
-
+  
     // 4. Получаем данные из профиля
     if (!userProfile) {
       console.log('⚠️ Профиль пользователя еще не загружен');
       return false;
     }
-
+  
     // 5. Платный курс (paid или price > 0)
     if (course.access_type === 'paid' || (course.price && course.price > 0)) {
       console.log('💰 Платный курс:', course.title, 'Цена:', course.price);
       // TODO: Проверить покупку в таблице course_purchases или user_courses
       return false; // Показываем кнопку покупки
     }
-
+  
     // 6. Premium курс
     if (course.access_type === 'premium') {
       const isPremium = userProfile.is_premium === true;
       const premiumUntil = userProfile.premium_until;
-
+      
       console.log('🔐 Premium проверка для курса:', course.title, {
         isPremium,
         premiumUntil,
@@ -145,23 +145,23 @@ const Subjects = () => {
         premiumUntilDate: premiumUntil ? new Date(premiumUntil) : null,
         isFuture: premiumUntil ? new Date(premiumUntil) > new Date() : false
       });
-
+  
       if (!isPremium) {
         console.log('❌ Пользователь не имеет Premium статуса');
         return false;
       }
-
+      
       // Если premium_until null — считаем вечным Premium
       if (!premiumUntil) {
         console.log('✅ Premium вечный (premium_until = null)');
         return true;
       }
-
+      
       const isActive = new Date(premiumUntil) > new Date();
       console.log(isActive ? '✅ Premium активен' : '❌ Premium истек');
       return isActive;
     }
-
+  
     // 7. По умолчанию — доступ закрыт
     console.log('ℹ️ Неизвестный тип доступа:', {
       title: course.title,
@@ -179,11 +179,11 @@ const Subjects = () => {
       console.log('👤 Email:', userProfile.email);
       console.log('⭐ is_premium:', userProfile.is_premium);
       console.log('📅 premium_until:', userProfile.premium_until);
-      console.log('🎯 Premium активен?:',
-        userProfile.is_premium === true &&
+      console.log('🎯 Premium активен?:', 
+        userProfile.is_premium === true && 
         (!userProfile.premium_until || new Date(userProfile.premium_until) > new Date())
       );
-
+      
       // Проверяем конкретно для eduhelperuz@gmail.com
       if (userProfile.email === 'eduhelperuz@gmail.com') {
         console.log('🎯 ЭТО EDUHELPER ADMIN!');
@@ -309,7 +309,7 @@ const Subjects = () => {
                 </span>
               </div>
             </div>
-            <button
+            <button 
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-bold hover:opacity-90 transition"
             >
@@ -332,8 +332,8 @@ const Subjects = () => {
               to={
                 accessible
                   ? `/subject/${course.id}`
-                  : course.access_type === 'paid' || course.price > 0
-                    ? `/course-buy/${course.id}`   // Платный курс
+                  : course.access_type === 'paid'
+                    ? `/course-buy/${course.id}`   // Платный курс — разовая покупка
                     : '/premium'                    // Премиум по подписке
               }
               className="group relative block"
@@ -343,37 +343,161 @@ const Subjects = () => {
                 opacity: 0,
               }}
             >
-              );
-        })}
-            </div>
+              <div
+                className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
+                  }`}
+              >
+                {/* Градиент при ховере */}
+                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
 
-      {/* Если курсов нет */ }
-          {
-            courses.length === 0 && !loading && (
-              <div className="text-center py-20">
-                <div className="text-6xl mb-6">📚</div>
-                <h3 className="text-3xl font-bold text-gray-600 dark:text-gray-400 mb-4">
-                  Hozircha kurslar mavjud emas
-                </h3>
-                <NavLink
-                  to="/eh-secret-admin-2025"
-                  className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full font-bold text-xl hover:scale-105 transition"
-                >
-                  Admin panelga o'tish
-                </NavLink>
+                {/* Бейдж PREMIUM / PULLIK */}
+                {!accessible && (
+                  <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
+                    <div className="text-center p-6">
+                      <div className="text-6xl md:text-8xl mb-4">🔒</div>
+
+                      {/* Если пользователь НЕ авторизован — просим зарегистрироваться */}
+                      {!isAuthenticated ? (
+                        <>
+                          <p className="text-2xl md:text-3xl font-bold text-white mb-4">
+                            Darslarni ko'rish uchun
+                          </p>
+                          <p className="text-3xl md:text-4xl font-black text-yellow-400">
+                            ro'yxatdan o'ting
+                          </p>
+                          <p className="text-gray-200 text-base mt-4">
+                            Bepul va tezkor → Kirish / Ro'yxatdan o'tish
+                          </p>
+                        </>
+                      ) : (
+                        /* Если авторизован, но нет премиума или платный курс */
+                        <>
+                          <p className="text-2xl md:text-3xl font-bold text-white">
+                            {course.access_type === 'paid' ? 'Pullik kurs' : 'Premium kurs'}
+                          </p>
+                          <p className="text-gray-200 text-base mt-2">
+                            {course.access_type === 'paid' ? 'Sotib olish →' : 'Obuna orqali oching'}
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="relative h-full flex flex-col">
+                  {/* Изображение */}
+                  <div className="relative h-48 md:h-64 overflow-hidden">
+                    <img
+                      src={courseImage}
+                      alt={course.title}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                      loading="lazy"
+                      onError={(e) => (e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80')}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    <div className="absolute top-4 left-4 text-4xl md:text-6xl bg-black/60 backdrop-blur-md rounded-2xl p-3 border border-white/20">
+                      {getCourseIcon(course.title)}
+                    </div>
+                  </div>
+
+                  {/* Контент */}
+                  <div className="p-6 md:p-8 flex flex-col flex-1">
+                    <h3 className="text-2xl md:text-3xl font-black text-gray-800 dark:text-white mb-3">
+                      {course.title}
+                    </h3>
+
+                    <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base mb-6 line-clamp-3">
+                      {course.description || 'Tavsif mavjud emas'}
+                    </p>
+
+                    <div className="flex flex-wrap gap-3 mb-6">
+                      {course.difficulty_level && (
+                        <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm">
+                          {course.difficulty_level}
+                        </span>
+                      )}
+                      {course.estimated_hours && (
+                        <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-sm">
+                          ⏱️ {course.estimated_hours} soat
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-end justify-between mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+                      <div>
+                        <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
+                          {lessonCount}
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">ta dars</div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`text-xl md:text-2xl font-black ${accessible ? 'text-green-500' : 'text-yellow-500'}`}>
+                          {accessible
+                            ? 'OCHIQ'
+                            : !isAuthenticated
+                              ? 'RO\'YXATDAN O\'TING'
+                              : course.access_type === 'paid'
+                                ? 'SOTIB OLISH'
+                                : 'PREMIUM'
+                          }
+                        </div>
+                        <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
+                          {accessible
+                            ? 'Kirish →'
+                            : !isAuthenticated
+                              ? 'Bepul ro\'yxatdan o\'tish →'
+                              : course.access_type === 'paid'
+                                ? 'Sotib olish →'
+                                : 'Obuna →'
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Анимированная полоска снизу */}
+                  <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
+                    <div
+                      className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${accessible
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                        : course.access_type === 'paid'
+                          ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                          : 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                        }`}
+                    />
+                  </div>
+                </div>
               </div>
-            )
-          }
+            </NavLink>
+          );
+        })}
+      </div>
 
-          {/* Подвал */ }
-          <div className="mt-20 text-center text-gray-500 dark:text-gray-400">
-            <p className="text-lg">© {new Date().getFullYear()} EDUHELPER UZ</p>
-            <p className="text-sm mt-2">
-              {stats.totalCourses} kurs • {stats.totalLessons} dars • Har kuni yangilanadi
-            </p>
-          </div>
+      {/* Если курсов нет */}
+      {courses.length === 0 && !loading && (
+        <div className="text-center py-20">
+          <div className="text-6xl mb-6">📚</div>
+          <h3 className="text-3xl font-bold text-gray-600 dark:text-gray-400 mb-4">
+            Hozircha kurslar mavjud emas
+          </h3>
+          <NavLink
+            to="/eh-secret-admin-2025"
+            className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full font-bold text-xl hover:scale-105 transition"
+          >
+            Admin panelga o'tish
+          </NavLink>
+        </div>
+      )}
+
+      {/* Подвал */}
+      <div className="mt-20 text-center text-gray-500 dark:text-gray-400">
+        <p className="text-lg">© {new Date().getFullYear()} EDUHELPER UZ</p>
+        <p className="text-sm mt-2">
+          {stats.totalCourses} kurs • {stats.totalLessons} dars • Har kuni yangilanadi
+        </p>
+      </div>
     </div>
-      );
+  );
 };
 
-      export default Subjects;
+export default Subjects;
