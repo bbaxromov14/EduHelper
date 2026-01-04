@@ -4,6 +4,7 @@ import { useAuth } from "../../context/ReactContext.jsx";
 import { supabase } from '../../lib/supabase';
 import DOMPurify from 'dompurify';
 import { v4 as uuidv4 } from "uuid"; // npm install uuid
+import { activatePremium } from '../../Utils/premiumManager';
 
 
 const AdminPanel = () => {
@@ -307,7 +308,7 @@ const AdminPanel = () => {
 
   const logAdminAction = useCallback(async (action, details = {}) => {
     if (!user || !adminData) return;
-  
+
     try {
       // Получение IP
       const getClientIP = async () => {
@@ -319,7 +320,7 @@ const AdminPanel = () => {
           return "unknown";
         }
       };
-  
+
       await supabase.from("admin_audit_log").insert({
         id: uuidv4(),                     // ⚠ обязательное поле
         user_id: user.id,
@@ -333,7 +334,7 @@ const AdminPanel = () => {
       console.error("Ошибка логирования:", error);
     }
   }, [user]);
-  
+
 
   // ============= Валидация курса =============
   const validateCourseData = useMemo(() => {
@@ -614,6 +615,28 @@ const AdminPanel = () => {
             Админ Панель
           </h1>
           <div className="flex gap-4">
+            <button
+              onClick={async () => {
+                if (!userData?.id) return alert('Войдите в аккаунт');
+
+                try {
+                  const result = await activatePremium(userData.id, {
+                    days: 365,           // 1 год
+                    type: 'yearly',
+                    transactionId: 'test-2026-manual'
+                  });
+                  console.log('Premium активирован!', result);
+                  alert('Premium успешно активирован на 1 год!');
+                  window.location.reload();
+                } catch (err) {
+                  console.error(err);
+                  alert('Ошибка: ' + err.message);
+                }
+              }}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg font-bold"
+            >
+              🔥 Активировать Premium (тест)
+            </button>
             <button
               onClick={() => navigate('/')}
               className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-lg transition"
@@ -937,7 +960,7 @@ const AdminPanel = () => {
                       <p className="text-gray-500 dark:text-gray-400">Нет прогресса по курсам</p>
                     ) : (
                       Object.values(group.courses).map((courseGroup, courseIndex) => {
-                        const avgProgress = courseGroup.lessonCount > 0 
+                        const avgProgress = courseGroup.lessonCount > 0
                           ? Math.round(courseGroup.totalProgress / courseGroup.lessonCount)
                           : 0;
 
@@ -960,8 +983,8 @@ const AdminPanel = () => {
                                 </thead>
                                 <tbody>
                                   {courseGroup.lessons.map((lessonItem, lessonIndex) => (
-                                    <tr 
-                                      key={lessonIndex} 
+                                    <tr
+                                      key={lessonIndex}
                                       className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                                     >
                                       <td className="px-6 py-4 text-gray-800 dark:text-white">
@@ -976,7 +999,7 @@ const AdminPanel = () => {
                                             />
                                           </div>
                                           <span className="font-medium text-gray-800 dark:text-white">
-                                            {lessonItem.progress || 0}% 
+                                            {lessonItem.progress || 0}%
                                           </span>
                                         </div>
                                       </td>
