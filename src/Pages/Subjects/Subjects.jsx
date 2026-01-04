@@ -3,7 +3,6 @@ import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 
-// Правильный импорт
 import premiumManager from '../../Utils/premiumManager';
 
 const Subjects = () => {
@@ -11,57 +10,56 @@ const Subjects = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
 
-  const [premiumStatus, setPremiumStatus] = useState(null);
-  const [premiumLoading, setPremiumLoading] = useState(false);
+  // Скрытый стейт Premium — только для логики доступа
+  const [premiumStatus, setPremiumStatus] = useState({ is_active: false });
 
   const { isAuthenticated, userData } = useAuth();
 
-  // Анимация fadeUp
-  useEffect(() => {
-    if (!document.getElementById('fadeUpAnimation')) {
-      const style = document.createElement('style');
-      style.id = 'fadeUpAnimation';
-      style.innerHTML = `
-        @keyframes fadeUp {
-          from { opacity: 0; transform: translateY(60px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `;
-      document.head.appendChild(style);
+  // Функция обновления статуса Premium
+  const updatePremiumStatus = async () => {
+    if (!isAuthenticated || !userData?.id) {
+      setPremiumStatus({ is_active: false });
+      return;
     }
-    return () => {
-      const style = document.getElementById('fadeUpAnimation');
-      if (style) document.head.removeChild(style);
-    };
-  }, []);
 
-  // Проверка Premium статуса
+    try {
+      const status = await premiumManager.checkPremiumStatus(userData.id);
+      setPremiumStatus({ is_active: !!status?.is_active });
+    } catch (error) {
+      console.error('Ошибка проверки Premium:', error);
+      setPremiumStatus({ is_active: false });
+    }
+  };
+
+  // Первичная загрузка
   useEffect(() => {
-    const checkUserPremium = async () => {
-      if (!isAuthenticated || !userData?.id) {
-        setPremiumStatus({ is_active: false });
-        return;
-      }
+    updatePremiumStatus();
+  }, [isAuthenticated, userData?.id]);
 
-      try {
-        setPremiumLoading(true);
-        const status = await premiumManager.checkPremiumStatus(userData.id);
-        const info = await premiumManager.getPremiumInfo(userData.id);
+  // 🔥 Автоматическое обновление при изменении профиля в Supabase (Realtime)
+  useEffect(() => {
+    if (!isAuthenticated || !userData?.id) return;
 
-        setPremiumStatus({
-          is_active: !!status?.is_active,
-          info: info || { is_premium: false },
-          email: userData.email
-        });
-      } catch (error) {
-        console.error('Ошибка проверки Premium:', error);
-        setPremiumStatus({ is_active: false });
-      } finally {
-        setPremiumLoading(false);
-      }
+    const channel = supabase
+      .channel('premium-profile-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userData.id}`
+        },
+        () => {
+          // При любом изменении профиля (is_premium, premium_until и т.д.) — обновляем статус
+          updatePremiumStatus();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-
-    checkUserPremium();
   }, [isAuthenticated, userData?.id]);
 
   // Загрузка курсов
@@ -96,10 +94,10 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
+  // Проверка доступа к курсу — теперь использует скрытый premiumStatus
   const checkCourseAccess = (course) => {
     if (course.access_type === 'free') return isAuthenticated;
     if (!isAuthenticated) return false;
-    if (premiumStatus === null || premiumLoading) return false;
 
     if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
       return false;
@@ -112,94 +110,25 @@ const Subjects = () => {
     return true;
   };
 
-  // Обновление Premium по кнопке — с проверкой userData
-  const refreshPremiumStatus = async () => {
-    if (!isAuthenticated || !userData?.id) {
-      setPremiumStatus({ is_active: false });
-      return;
+  // Анимация fadeUp (оставляем)
+  useEffect(() => {
+    if (!document.getElementById('fadeUpAnimation')) {
+      const style = document.createElement('style');
+      style.id = 'fadeUpAnimation';
+      style.innerHTML = `
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(60px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `;
+      document.head.appendChild(style);
     }
+    return () => {
+      const style = document.getElementById('fadeUpAnimation');
+      if (style) document.head.removeChild(style);
+    };
+  }, []);
 
-    try {
-      setPremiumLoading(true);
-      const status = await premiumManager.checkPremiumStatus(userData.id);
-      const info = await premiumManager.getPremiumInfo(userData.id);
-
-      setPremiumStatus({
-        is_active: !!status?.is_active,
-        info: info || { is_premium: false },
-        email: userData.email
-      });
-    } catch (error) {
-      console.error('Ошибка обновления Premium:', error);
-      alert('Premium статусни янгилашда хатолик');
-    } finally {
-      setPremiumLoading(false);
-    }
-  };
-
-  const renderPremiumDebug = () => {
-    if (!premiumStatus || premiumLoading) return null;
-
-    const { is_active, info } = premiumStatus;
-    const daysLeft = info?.days_left ?? (info?.premium_type === 'lifetime' ? '∞' : 0);
-
-    return (
-      <div className="max-w-7xl mx-auto mb-8 p-6 bg-gradient-to-r from-emerald-50/90 to-blue-50/90 dark:from-emerald-900/50 dark:to-blue-900/50 rounded-3xl shadow-2xl border border-emerald-200/50 dark:border-emerald-500/30 backdrop-blur-xl">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-4">
-            <div className={`p-3 rounded-2xl text-3xl transition-all ${
-              is_active
-                ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow-lg animate-pulse'
-                : 'bg-gradient-to-r from-orange-500 to-red-600 text-white shadow-lg'
-            }`}>
-              {is_active ? '⭐' : '⚠️'}
-            </div>
-
-            <div>
-              <h3 className="text-2xl font-black text-gray-900 dark:text-white">
-                {premiumStatus.email || 'Foydalanuvchi'}
-              </h3>
-              <div className="flex flex-wrap items-center gap-3 mt-2">
-                <span className={`px-4 py-2 rounded-xl font-bold text-sm ${
-                  is_active
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
-                    : 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-                }`}>
-                  {is_active
-                    ? info?.premium_type === 'lifetime'
-                      ? 'ПОЖИЗНЕННЫЙ PREMIUM ✅'
-                      : `АКТИВЕН (${daysLeft} kun qoldi) ✅`
-                    : 'PREMIUM YO\'Q ❌'}
-                </span>
-
-                {info?.formatted_until && info.premium_type !== 'lifetime' && (
-                  <span className="px-4 py-2 bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 rounded-xl text-xs font-mono">
-                    📅 {info.formatted_until}
-                  </span>
-                )}
-
-                {info?.premium_type && (
-                  <span className="px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300 rounded-lg text-xs font-bold">
-                    {info.premium_type.toUpperCase()}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={refreshPremiumStatus}
-            disabled={premiumLoading}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl font-bold hover:scale-105 transition-all shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {premiumLoading ? 'Yangilanmoqda...' : '🔄 Yangilash'}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Остальные функции (getCourseIcon, getLessonCount, getCourseImage) — без изменений
   const getCourseIcon = (title) => {
     const icons = {
       matematika: '🧮', kimyo: '⚗️', fizika: '⚛️', biologiya: '🔬',
@@ -273,7 +202,7 @@ const Subjects = () => {
         </div>
       </div>
 
-      {renderPremiumDebug()}
+      {/* Блок Premium статуса полностью удалён — ничего не показывается */}
 
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
         {courses.map((course, index) => {
@@ -326,6 +255,7 @@ const Subjects = () => {
                   </div>
                 )}
 
+                {/* Остальной UI карточки курса — без изменений */}
                 <div className="relative h-full flex flex-col">
                   <div className="relative h-48 md:h-64 overflow-hidden">
                     <img
@@ -396,6 +326,7 @@ const Subjects = () => {
         })}
       </div>
 
+      {/* Пустое состояние и футер — без изменений */}
       {courses.length === 0 && !loading && (
         <div className="text-center py-20">
           <div className="text-6xl mb-6">📚</div>
