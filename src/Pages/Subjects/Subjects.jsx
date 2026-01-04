@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
@@ -8,7 +8,10 @@ const Subjects = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
   const [userProfile, setUserProfile] = useState(null);
+  const [courseAccess, setCourseAccess] = useState({});
   const { isAuthenticated, userData } = useAuth();
+  
+  const profileLoadedRef = useRef(false);
 
   // Анимация fadeUp
   useEffect(() => {
@@ -36,16 +39,17 @@ const Subjects = () => {
     };
   }, []);
 
-  // Загружаем профиль пользователя из таблицы profiles
+  // Загружаем профиль пользователя
   useEffect(() => {
     const loadUserProfile = async () => {
-      if (!isAuthenticated || !userData?.email) {
-        setUserProfile(null);
+      if (!isAuthenticated || !userData?.email || profileLoadedRef.current) {
         return;
       }
 
       try {
+        profileLoadedRef.current = true;
         console.log('Загрузка профиля для email:', userData.email);
+        
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
@@ -57,19 +61,19 @@ const Subjects = () => {
           return;
         }
 
-        console.log('✅ Загружен профиль из базы:', {
-          email: data.email,
-          is_premium: data.is_premium,
-          premium_until: data.premium_until,
-          full_name: data.full_name
-        });
+        console.log('✅ Загружен профиль из базы:', data);
         setUserProfile(data);
+        
       } catch (error) {
         console.error('Ошибка загрузки профиля:', error);
       }
     };
 
     loadUserProfile();
+    
+    return () => {
+      profileLoadedRef.current = false;
+    };
   }, [isAuthenticated, userData?.email]);
 
   // Загрузка курсов
@@ -106,36 +110,25 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  const isCourseAccessible = (course) => {
-    console.log('📋 Проверка доступа к курсу:', {
-      title: course.title,
-      access_type: course.access_type,
-      userAuthenticated: isAuthenticated,
-      userProfileLoaded: !!userProfile,
-      userEmail: userProfile?.email
-    });
-
-    // 1. Бесплатный курс — только авторизация
+  // Функция проверки доступа
+  const checkCourseAccess = (course) => {
+    // 1. Бесплатный курс
     if (course.access_type === 'free') {
-      console.log('✅ Бесплатный курс по access_type');
       return isAuthenticated;
     }
 
     // 2. Пользователь не авторизован
     if (!isAuthenticated) {
-      console.log('❌ Пользователь не авторизован');
       return false;
     }
 
-    // 3. Ждем загрузки профиля
+    // 3. Профиль не загружен
     if (!userProfile) {
-      console.log('⏳ Ждем загрузки профиля... возвращаем false временно');
-      return false; // Временно false, пока грузится профиль
+      return false;
     }
 
     // 4. Платный курс
     if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) {
-      console.log('💰 Платный курс - нужна покупка');
       return false;
     }
 
@@ -144,53 +137,40 @@ const Subjects = () => {
       const isPremium = userProfile.is_premium === true;
       const premiumUntil = userProfile.premium_until;
 
-      console.log('🔐 Premium проверка:', {
-        title: course.title,
-        userPremium: isPremium,
-        premiumUntil: premiumUntil,
-        currentTime: new Date(),
-        premiumUntilDate: premiumUntil ? new Date(premiumUntil) : null,
-        isFuture: premiumUntil ? new Date(premiumUntil) > new Date() : false
-      });
-
       if (!isPremium) {
-        console.log('❌ Пользователь не имеет Premium статуса');
         return false;
       }
 
       if (!premiumUntil) {
-        console.log('✅ Premium вечный (premium_until = null)');
         return true;
       }
 
       const isActive = new Date(premiumUntil) > new Date();
-      console.log(isActive ? '✅ Premium активен' : '❌ Premium истек');
       return isActive;
     }
 
     return false;
   };
 
-  // Проверяем данные пользователя для отладки
+  // Обновляем доступ при изменении профиля или курсов
   useEffect(() => {
-    if (userProfile) {
-      console.log('📊 === ТЕКУЩИЙ СТАТУС ПОЛЬЗОВАТЕЛЯ ===');
-      console.log('👤 Email:', userProfile.email);
-      console.log('⭐ is_premium:', userProfile.is_premium);
-      console.log('📅 premium_until:', userProfile.premium_until);
-      console.log('🎯 Premium активен?:',
-        userProfile.is_premium === true &&
-        (!userProfile.premium_until || new Date(userProfile.premium_until) > new Date())
-      );
-
-      // Проверяем конкретно для eduhelperuz@gmail.com
-      if (userProfile.email === 'eduhelperuz@gmail.com') {
-        console.log('🎯 ЭТО EDUHELPER ADMIN!');
-        console.log('✅ is_premium должен быть:', true);
-        console.log('✅ premium_until должен быть:', '2030-12-12 11:14:43+00');
+    if (courses.length > 0) {
+      const newAccess = {};
+      courses.forEach(course => {
+        newAccess[course.id] = checkCourseAccess(course);
+      });
+      setCourseAccess(newAccess);
+      
+      // Логи для отладки
+      if (userProfile) {
+        console.log('=== ОБНОВЛЕН ДОСТУП К КУРСАМ ===');
+        console.log('Пользователь:', userProfile.email);
+        console.log('is_premium:', userProfile.is_premium);
+        console.log('premium_until:', userProfile.premium_until);
+        console.log('Доступ к курсам:', newAccess);
       }
     }
-  }, [userProfile]);
+  }, [userProfile, courses, isAuthenticated]);
 
   // Иконка курса
   const getCourseIcon = (title) => {
@@ -288,7 +268,7 @@ const Subjects = () => {
         </div>
       </div>
 
-      {/* Отладка Premium статуса (можно удалить после проверки) */}
+      {/* Отладка Premium статуса */}
       {userProfile && (
         <div className="max-w-7xl mx-auto mb-6 p-4 bg-white/80 dark:bg-gray-800/80 rounded-xl shadow-lg">
           <div className="flex items-center justify-between">
@@ -301,14 +281,14 @@ const Subjects = () => {
                   ⭐ Premium: {userProfile.is_premium ? 'ДА' : 'НЕТ'}
                 </span>
                 <span className="px-3 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 rounded-full text-sm">
-                  📅 До: {userProfile.premium_until ? new Date(userProfile.premium_until).toLocaleDateString() : 'Нет срока'}
+                  📅 До: {userProfile.premium_until ? new Date(userProfile.premium_until).toLocaleDateString() : 'Вечный'}
                 </span>
                 <span className="px-3 py-1 bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 rounded-full text-sm">
                   🎯 Активен: {userProfile.is_premium && (!userProfile.premium_until || new Date(userProfile.premium_until) > new Date()) ? 'ДА' : 'НЕТ'}
                 </span>
               </div>
             </div>
-            <button
+            <button 
               onClick={() => window.location.reload()}
               className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-bold hover:opacity-90 transition"
             >
@@ -321,7 +301,7 @@ const Subjects = () => {
       {/* Сетка курсов */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
         {courses.map((course, index) => {
-          const accessible = isCourseAccessible(course);
+          const accessible = courseAccess[course.id] || false;
           const lessonCount = getLessonCount(course);
           const courseImage = getCourseImage(course);
 
@@ -332,8 +312,8 @@ const Subjects = () => {
                 accessible
                   ? `/subject/${course.id}`
                   : course.access_type === 'paid'
-                    ? `/course-buy/${course.id}`   // Платный курс — разовая покупка
-                    : '/premium'                    // Премиум по подписке
+                    ? `/course-buy/${course.id}`
+                    : '/premium'
               }
               className="group relative block"
               style={{
@@ -355,7 +335,6 @@ const Subjects = () => {
                     <div className="text-center p-6">
                       <div className="text-6xl md:text-8xl mb-4">🔒</div>
 
-                      {/* Если пользователь НЕ авторизован — просим зарегистрироваться */}
                       {!isAuthenticated ? (
                         <>
                           <p className="text-2xl md:text-3xl font-bold text-white mb-4">
@@ -369,7 +348,6 @@ const Subjects = () => {
                           </p>
                         </>
                       ) : (
-                        /* Если авторизован, но нет премиума или платный курс */
                         <>
                           <p className="text-2xl md:text-3xl font-bold text-white">
                             {course.access_type === 'paid' ? 'Pullik kurs' : 'Premium kurs'}
