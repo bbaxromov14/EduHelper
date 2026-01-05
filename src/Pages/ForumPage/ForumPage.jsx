@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
-import { Send, User, Clock, AlertCircle, Image as ImageIcon, Smile, Paperclip } from 'lucide-react';
+import { Send, User, Clock, AlertCircle, Image as ImageIcon, Smile } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -15,11 +15,12 @@ const ForumPage = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
-    const [isTyping, setIsTyping] = useState(false);
+    const [hasMoreMessages, setHasMoreMessages] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
-    const typingTimeoutRef = useRef(null);
+    const messagesContainerRef = useRef(null);
 
     // Получаем текущего пользователя и его профиль
     useEffect(() => {
@@ -44,7 +45,6 @@ const ForumPage = () => {
 
         getUser();
 
-        // При размонтировании обновляем статус на оффлайн
         return () => {
             if (user) {
                 forumApi.updateOnlineStatus(user.id, false);
@@ -52,105 +52,166 @@ const ForumPage = () => {
         };
     }, []);
 
-// Подписка на новые сообщения
-useEffect(() => {
-    fetchMessages();
-    fetchOnlineUsers();
-    
-    console.log('🔄 Настраиваем Real-time подписку...');
-    
-    // Канал для сообщений
-    const messagesChannel = supabase
-        .channel('forum-messages-realtime')
-        .on(
-            'postgres_changes',
-            {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'forum_messages'
-            },
-            async (payload) => {
-                console.log('📨 Новое сообщение (Real-time):', payload.new);
-                
-                try {
-                    // Получаем профиль автора
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('full_name, avatar_url, username')
-                        .eq('id', payload.new.user_id)
-                        .single();
-                    
-                    // Добавляем сообщение в список
-                    setMessages(prev => [...prev, {
-                        ...payload.new,
-                        profiles: profile || {
-                            full_name: 'Пользователь',
-                            avatar_url: null,
-                            username: null
-                        }
-                    }]);
-                    
-                    // Автопрокрутка
-                    setTimeout(scrollToBottom, 100);
-                } catch (error) {
-                    console.error('Ошибка обработки сообщения:', error);
-                }
-            }
-        )
-        .subscribe((status) => {
-            console.log('📡 Статус подписки на сообщения:', status);
-        });
-    
-    // Канал для онлайн статуса
-    const onlineChannel = supabase
-        .channel('online-status-realtime')
-        .on(
-            'postgres_changes',
-            {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles'
-            },
-            (payload) => {
-                console.log('🔄 Изменение статуса пользователя:', payload.new);
-                // Обновляем список онлайн пользователей
-                fetchOnlineUsers();
-            }
-        )
-        .subscribe((status) => {
-            console.log('📡 Статус подписки на статусы:', status);
-        });
-    
-    // Периодическое обновление на всякий случай
-    const intervalId = setInterval(() => {
-        console.log('⏰ Периодическое обновление сообщений...');
-        fetchMessages();
-        fetchOnlineUsers();
-    }, 15000); // Каждые 15 секунд
-    
-    return () => {
-        console.log('🧹 Очистка подписок...');
-        supabase.removeChannel(messagesChannel);
-        supabase.removeChannel(onlineChannel);
-        clearInterval(intervalId);
-    };
-}, []);
-
-    // Автопрокрутка к новым сообщениям
+    // Инициализация чата - загрузка последних 50 сообщений
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        const initChat = async () => {
+            try {
+                setLoading(true);
+                
+                // Загружаем последние 50 сообщений
+                const { data, error } = await supabase
+                    .from('forum_messages')
+                    .select(`
+                        *,
+                        profiles:user_id (
+                            full_name,
+                            avatar_url,
+                            username
+                        )
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(50);
 
-    const fetchMessages = async () => {
+                if (error) throw error;
+                
+                // Переворачиваем массив, чтобы старые были сверху
+                setMessages(data.reverse());
+                
+                // Загружаем онлайн пользователей
+                fetchOnlineUsers();
+            } catch (err) {
+                console.error('Ошибка загрузки сообщений:', err);
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        initChat();
+    }, []);
+
+    // Real-time подписка на новые сообщения
+    useEffect(() => {
+        console.log('🔄 Подключаемся к Real-time...');
+        
+        // Канал для новых сообщений
+        const messagesChannel = supabase
+            .channel('forum-messages-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'forum_messages'
+                },
+                async (payload) => {
+                    console.log('📨 Новое сообщение в реальном времени:', payload.new);
+                    
+                    try {
+                        // Получаем профиль автора
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('full_name, avatar_url, username')
+                            .eq('id', payload.new.user_id)
+                            .single();
+                        
+                        // Добавляем сообщение в конец
+                        setMessages(prev => [...prev, {
+                            ...payload.new,
+                            profiles: profile || {
+                                full_name: 'Пользователь',
+                                avatar_url: null,
+                                username: null
+                            }
+                        }]);
+                        
+                        // Плавная прокрутка к новому сообщению
+                        setTimeout(() => {
+                            messagesEndRef.current?.scrollIntoView({ 
+                                behavior: 'smooth',
+                                block: 'end'
+                            });
+                        }, 100);
+                    } catch (error) {
+                        console.error('Ошибка обработки сообщения:', error);
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log('📡 Статус Real-time:', status);
+            });
+        
+        // Канал для онлайн статуса
+        const onlineChannel = supabase
+            .channel('online-status-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'profiles',
+                    filter: 'is_online=eq.true'
+                },
+                (payload) => {
+                    console.log('🔄 Обновление онлайн статуса');
+                    fetchOnlineUsers();
+                }
+            )
+            .subscribe();
+        
+        // Фоновая проверка раз в 2 минуты (только для подстраховки)
+        const backgroundCheck = setInterval(() => {
+            fetchOnlineUsers();
+        }, 120000);
+        
+        return () => {
+            console.log('🧹 Отключаем Real-time...');
+            supabase.removeChannel(messagesChannel);
+            supabase.removeChannel(onlineChannel);
+            clearInterval(backgroundCheck);
+        };
+    }, []);
+
+    // Загрузка истории сообщений (как в Telegram)
+    const loadMoreMessages = async () => {
+        if (messages.length === 0 || loadingMore) return;
+        
         try {
-            setLoading(true);
-            const messages = await forumApi.getForumMessages();
-            setMessages(messages);
+            setLoadingMore(true);
+            
+            const firstMessage = messages[0];
+            
+            // Загружаем 30 сообщений раньше первого
+            const { data, error } = await supabase
+                .from('forum_messages')
+                .select(`
+                    *,
+                    profiles:user_id (
+                        full_name,
+                        avatar_url,
+                        username
+                    )
+                `)
+                .lt('created_at', firstMessage.created_at)
+                .order('created_at', { ascending: false })
+                .limit(30);
+            
+            if (error) throw error;
+            
+            if (data.length > 0) {
+                // Переворачиваем и добавляем в начало
+                const reversedData = data.reverse();
+                setMessages(prev => [...reversedData, ...prev]);
+                
+                // Проверяем, есть ли еще сообщения
+                setHasMoreMessages(data.length === 30);
+            } else {
+                setHasMoreMessages(false);
+            }
         } catch (err) {
-            console.error('Ошибка загрузки сообщений:', err);
-            setError(err.message);
+            console.error('Ошибка загрузки истории:', err);
         } finally {
-            setLoading(false);
+            setLoadingMore(false);
         }
     };
 
@@ -170,29 +231,24 @@ useEffect(() => {
         try {
             let imageUrl = null;
 
-            // Если есть выбранное изображение, загружаем его
             if (selectedImage && typeof selectedImage !== 'string') {
                 const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
                 imageUrl = await forumApi.uploadForumImage(file, user.id);
             } else if (selectedImage) {
-                // Если это уже строка (base64 или URL)
                 imageUrl = selectedImage;
             }
 
-            // Отправляем сообщение
             await forumApi.sendMessage(newMessage, user.id, imageUrl);
-
-            // Очищаем форму
+            
             setNewMessage('');
             setSelectedImage(null);
             setShowEmojiPicker(false);
         } catch (err) {
             console.error('Ошибка отправки:', err);
-            setError(err.message);
+            setError('Хабарни жўнатишда хатолик');
         }
     };
 
-    // Функция для конвертации DataURL в File
     const dataURLtoFile = (dataurl, filename) => {
         return new Promise((resolve) => {
             const arr = dataurl.split(',');
@@ -200,11 +256,11 @@ useEffect(() => {
             const bstr = atob(arr[1]);
             let n = bstr.length;
             const u8arr = new Uint8Array(n);
-
-            while (n--) {
+            
+            while(n--) {
                 u8arr[n] = bstr.charCodeAt(n);
             }
-
+            
             resolve(new File([u8arr], filename, { type: mime }));
         });
     };
@@ -218,19 +274,16 @@ useEffect(() => {
         if (!file || !user) return;
 
         try {
-            // Проверяем тип файла
             if (!file.type.startsWith('image/')) {
-                setError('Пожалуйста, выберите изображение');
+                setError('Илтимос, расм танланг');
                 return;
             }
 
-            // Проверяем размер (макс 5MB)
             if (file.size > 5 * 1024 * 1024) {
-                setError('Изображение слишком большое. Максимальный размер: 5MB');
+                setError('Расм жуда катта. Максимал хажми: 5MB');
                 return;
             }
 
-            // Создаем превью
             const reader = new FileReader();
             reader.onloadend = () => {
                 setSelectedImage(reader.result);
@@ -238,8 +291,8 @@ useEffect(() => {
             reader.readAsDataURL(file);
 
         } catch (err) {
-            console.error('Ошибка загрузки файла:', err);
-            setError('Не удалось загрузить изображение');
+            console.error('Файл юклашда хатолик:', err);
+            setError('Расмни юклаб бўлмади');
         }
     };
 
@@ -248,22 +301,6 @@ useEffect(() => {
         setShowEmojiPicker(false);
     };
 
-    // Обработка набора текста
-    const handleInputChange = (e) => {
-        setNewMessage(e.target.value);
-
-        // Сбрасываем таймер набора текста
-        if (typingTimeoutRef.current) {
-            clearTimeout(typingTimeoutRef.current);
-        }
-
-        // Устанавливаем новый таймер
-        typingTimeoutRef.current = setTimeout(() => {
-            setIsTyping(false);
-        }, 1000);
-    };
-
-    // Получаем имя пользователя для отображения
     const getUserDisplayName = (message) => {
         if (message.profiles?.full_name) {
             return message.profiles.full_name;
@@ -272,12 +309,11 @@ useEffect(() => {
             return message.profiles.username;
         }
         if (userProfile && message.user_id === userProfile.id) {
-            return userProfile.full_name || 'Вы';
+            return userProfile.full_name || 'Сиз';
         }
-        return 'Аноним';
+        return 'Номаълум';
     };
 
-    // Получаем аватар пользователя
     const getUserAvatar = (message) => {
         if (message.profiles?.avatar_url) {
             return message.profiles.avatar_url;
@@ -291,10 +327,10 @@ useEffect(() => {
                 {/* Заголовок */}
                 <div className="mb-8 text-center">
                     <h1 className="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white mb-3">
-                        Форум EdduHelper
+                        EdduHelper Форуми
                     </h1>
                     <p className="text-gray-600 dark:text-gray-300">
-                        Общайтесь с другими пользователями в реальном времени
+                        Фойдаланувчилар билан жонли мулокот
                     </p>
                 </div>
 
@@ -322,23 +358,16 @@ useEffect(() => {
                                 <div className="flex justify-between items-center">
                                     <div className="flex items-center gap-3">
                                         <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-                                        <span>Онлайн: {onlineUsers.length} пользователей</span>
+                                        <span>Онлайн: {onlineUsers.length} фойдаланувчи</span>
                                     </div>
-                                    {isTyping && (
-                                        <div className="text-sm italic flex items-center">
-                                            <div className="flex space-x-1 mr-2">
-                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce"></div>
-                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                                            </div>
-                                            кто-то печатает...
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
                             {/* Сообщения */}
-                            <div className="h-[500px] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+                            <div 
+                                ref={messagesContainerRef}
+                                className="h-[500px] overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900"
+                            >
                                 {loading ? (
                                     <div className="flex justify-center items-center h-full">
                                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -346,73 +375,93 @@ useEffect(() => {
                                 ) : messages.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center h-full text-gray-500">
                                         <Send className="w-16 h-16 mb-4 opacity-50" />
-                                        <p className="text-xl">Начните общение первым!</p>
-                                        <p className="text-sm mt-2">Напишите сообщение и отправьте его</p>
+                                        <p className="text-xl">Биринчи бўлиб ёзинг!</p>
+                                        <p className="text-sm mt-2">Хабар ёзиб, жўнатинг</p>
                                     </div>
                                 ) : (
-                                    <div className="space-y-4">
-                                        {messages.map((message) => (
-                                            <div
-                                                key={message.id}
-                                                className={`flex ${message.user_id === user?.id ? 'justify-end' : 'justify-start'}`}
-                                            >
-                                                <div
-                                                    className={`max-w-[70%] rounded-2xl p-4 ${message.user_id === user?.id
-                                                        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none'
-                                                        : 'bg-white dark:bg-gray-700 rounded-bl-none'
-                                                        } shadow-md`}
+                                    <>
+                                        {/* Кнопка загрузки истории */}
+                                        {hasMoreMessages && (
+                                            <div className="text-center py-4">
+                                                <button
+                                                    onClick={loadMoreMessages}
+                                                    disabled={loadingMore}
+                                                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-sm text-gray-600 dark:text-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    {/* Заголовок сообщения */}
-                                                    <div className="flex items-center gap-2 mb-2">
+                                                    {loadingMore ? (
                                                         <div className="flex items-center gap-2">
-                                                            {getUserAvatar(message) ? (
-                                                                <img
-                                                                    src={getUserAvatar(message)}
-                                                                    alt={getUserDisplayName(message)}
-                                                                    className="w-8 h-8 rounded-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 flex items-center justify-center text-white">
-                                                                    <User className="w-5 h-5" />
-                                                                </div>
-                                                            )}
-                                                            <span className="font-semibold">
-                                                                {getUserDisplayName(message)}
-                                                                {message.user_id === user?.id && ' (Вы)'}
+                                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                                                            Юкланмоқда...
+                                                        </div>
+                                                    ) : '⬇ Олдинги хабарлар'}
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-4">
+                                            {messages.map((message) => (
+                                                <div
+                                                    key={message.id}
+                                                    className={`flex ${message.user_id === user?.id ? 'justify-end' : 'justify-start'}`}
+                                                >
+                                                    <div
+                                                        className={`max-w-[70%] rounded-2xl p-4 ${message.user_id === user?.id
+                                                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-none'
+                                                            : 'bg-white dark:bg-gray-700 rounded-bl-none'
+                                                            } shadow-md`}
+                                                    >
+                                                        {/* Заголовок сообщения */}
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                {getUserAvatar(message) ? (
+                                                                    <img
+                                                                        src={getUserAvatar(message)}
+                                                                        alt={getUserDisplayName(message)}
+                                                                        className="w-8 h-8 rounded-full object-cover"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 flex items-center justify-center text-white">
+                                                                        <User className="w-5 h-5" />
+                                                                    </div>
+                                                                )}
+                                                                <span className="font-semibold">
+                                                                    {getUserDisplayName(message)}
+                                                                    {message.user_id === user?.id && ' (Сиз)'}
+                                                                </span>
+                                                            </div>
+                                                            <span className="text-xs opacity-75">
+                                                                <Clock className="inline w-3 h-3 mr-1" />
+                                                                {format(new Date(message.created_at), 'HH:mm', { locale: ru })}
                                                             </span>
                                                         </div>
-                                                        <span className="text-xs opacity-75">
-                                                            <Clock className="inline w-3 h-3 mr-1" />
-                                                            {format(new Date(message.created_at), 'HH:mm', { locale: ru })}
-                                                        </span>
+
+                                                        {/* Контент сообщения */}
+                                                        {message.image_url && (
+                                                            <div className="mb-2">
+                                                                <img
+                                                                    src={message.image_url}
+                                                                    alt="Илова килинган расм"
+                                                                    className="rounded-lg max-w-full max-h-64 h-auto object-contain bg-gray-100 dark:bg-gray-800"
+                                                                    onError={(e) => {
+                                                                        e.target.style.display = 'none';
+                                                                        e.target.parentElement.innerHTML =
+                                                                            '<div class="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-500">Расм юкланмади</div>';
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        )}
+
+                                                        {message.content && (
+                                                            <p className={`break-words ${message.user_id === user?.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
+                                                                {message.content}
+                                                            </p>
+                                                        )}
                                                     </div>
-
-                                                    {/* Контент сообщения */}
-                                                    {message.image_url && (
-                                                        <div className="mb-2">
-                                                            <img
-                                                                src={message.image_url}
-                                                                alt="Прикрепленное изображение"
-                                                                className="rounded-lg max-w-full max-h-64 h-auto object-contain bg-gray-100 dark:bg-gray-800"
-                                                                onError={(e) => {
-                                                                    e.target.style.display = 'none';
-                                                                    e.target.parentElement.innerHTML =
-                                                                        '<div class="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-500">Изображение не загружено</div>';
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    {message.content && (
-                                                        <p className={`break-words ${message.user_id === user?.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
-                                                            {message.content}
-                                                        </p>
-                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
-                                        <div ref={messagesEndRef} />
-                                    </div>
+                                            ))}
+                                            <div ref={messagesEndRef} />
+                                        </div>
+                                    </>
                                 )}
                             </div>
 
@@ -423,14 +472,14 @@ useEffect(() => {
                                         <div className="mb-3 relative">
                                             <img
                                                 src={selectedImage}
-                                                alt="Preview"
+                                                alt="Кўриб чиқиш"
                                                 className="rounded-lg max-h-32"
                                             />
                                             <button
                                                 type="button"
                                                 onClick={() => setSelectedImage(null)}
                                                 className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
-                                                aria-label="Удалить изображение"
+                                                aria-label="Расмни ўчириш"
                                             >
                                                 ×
                                             </button>
@@ -444,8 +493,8 @@ useEffect(() => {
                                                 type="button"
                                                 onClick={() => fileInputRef.current.click()}
                                                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                                                title="Добавить изображение"
-                                                aria-label="Добавить изображение"
+                                                title="Расм қўшиш"
+                                                aria-label="Расм қўшиш"
                                             >
                                                 <ImageIcon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                                             </button>
@@ -453,8 +502,8 @@ useEffect(() => {
                                                 type="button"
                                                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                                                 className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-                                                title="Добавить эмодзи"
-                                                aria-label="Добавить эмодзи"
+                                                title="Эмоджи қўшиш"
+                                                aria-label="Эмоджи қўшиш"
                                             >
                                                 <Smile className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                                             </button>
@@ -472,8 +521,8 @@ useEffect(() => {
                                         <input
                                             type="text"
                                             value={newMessage}
-                                            onChange={handleInputChange}
-                                            placeholder="Напишите сообщение..."
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            placeholder="Хабарингизни ёзинг..."
                                             className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                                         />
 
@@ -482,7 +531,7 @@ useEffect(() => {
                                             type="submit"
                                             disabled={!newMessage.trim() && !selectedImage}
                                             className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
-                                            aria-label="Отправить сообщение"
+                                            aria-label="Хабарни жўнатиш"
                                         >
                                             <Send className="w-5 h-5" />
                                         </button>
@@ -504,8 +553,8 @@ useEffect(() => {
                                 <div className="p-4 text-center border-t dark:border-gray-700">
                                     <p className="text-gray-600 dark:text-gray-300">
                                         <a href="/login" className="text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 font-medium">
-                                            Войдите
-                                        </a> в систему, чтобы отправлять сообщения
+                                            Тизимга киринг
+                                        </a> хабар жўнатиш учун
                                     </p>
                                 </div>
                             )}
@@ -516,13 +565,13 @@ useEffect(() => {
                     <div className="lg:w-80">
                         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6">
                             <h3 className="text-xl font-bold mb-4 text-gray-800 dark:text-white">
-                                Сейчас онлайн
+                                Ҳозир онлайн
                             </h3>
 
                             <div className="space-y-3 max-h-96 overflow-y-auto">
                                 {onlineUsers.length === 0 ? (
                                     <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                                        Нет пользователей онлайн
+                                        Онлайн фойдаланувчилар йўқ
                                     </p>
                                 ) : (
                                     onlineUsers.map((onlineUser) => (
@@ -546,11 +595,11 @@ useEffect(() => {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-medium text-gray-800 dark:text-white truncate">
-                                                    {onlineUser.full_name || onlineUser.email?.split('@')[0] || 'Пользователь'}
-                                                    {onlineUser.id === user?.id && ' (Вы)'}
+                                                    {onlineUser.full_name || onlineUser.email?.split('@')[0] || 'Фойдаланувчи'}
+                                                    {onlineUser.id === user?.id && ' (Сиз)'}
                                                 </p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                    был(а) {format(new Date(onlineUser.last_seen), 'HH:mm', { locale: ru })}
+                                                    {format(new Date(onlineUser.last_seen), 'HH:mm', { locale: ru })}
                                                 </p>
                                             </div>
                                         </div>
@@ -558,44 +607,22 @@ useEffect(() => {
                                 )}
                             </div>
 
-                            {/* Статистика */}
+                            {/* Статистика (упрощенная) */}
                             <div className="mt-8 pt-6 border-t dark:border-gray-700">
                                 <h4 className="text-lg font-semibold mb-3 text-gray-800 dark:text-white">
-                                    Статистика чата
+                                    Статистика
                                 </h4>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-xl">
-                                        <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                                            {messages.length}
-                                        </p>
-                                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                                            Сообщений
-                                        </p>
-                                    </div>
+                                <div className="grid grid-cols-1 gap-4">
                                     <div className="bg-green-50 dark:bg-green-900/30 p-4 rounded-xl">
                                         <p className="text-2xl font-bold text-green-600 dark:text-green-400">
                                             {onlineUsers.length}
                                         </p>
                                         <p className="text-sm text-gray-600 dark:text-gray-300">
-                                            Онлайн
+                                            Онлайн фойдаланувчи
                                         </p>
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Кнопка обновления */}
-                            <button
-                                onClick={() => {
-                                    fetchMessages();
-                                    fetchOnlineUsers();
-                                }}
-                                className="w-full mt-4 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Обновить
-                            </button>
                         </div>
                     </div>
                 </div>
