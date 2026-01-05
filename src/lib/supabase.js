@@ -3,18 +3,180 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = 'https://uuppgfdgcrzewxfjpxkc.supabase.co'
 const supabaseAnonKey = 'sb_publishable_AGCtOWD0jWK0gEeShEqQBA_jtfWs5Ps'
 
-// Основной клиент
+// Основной клиент с Realtime поддержкой
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
   }
 })
 
-// ==================== АУТЕНТИФИКАЦИЯ ====================
+// ==================== ФУНКЦИИ ДЛЯ ФОРУМА/ЧАТА ====================
 
-// Регистрация с email/password (ТОЛЬКО auth)
+export const forumApi = {
+  // Получить сообщения форума
+  getForumMessages: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            avatar_url,
+            full_name
+          )
+        `)
+        .order('created_at', { ascending: true })
+        .limit(100)
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка загрузки сообщений:', error)
+      return []
+    }
+  },
+
+  // Отправить сообщение
+  sendMessage: async (content, userId, imageUrl = null) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .insert([
+          {
+            content,
+            user_id: userId,
+            image_url: imageUrl,
+            type: imageUrl ? 'image' : 'text'
+          }
+        ])
+        .select(`
+          *,
+          profiles:user_id (
+            username,
+            avatar_url
+          )
+        `)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Ошибка отправки сообщения:', error)
+      throw error
+    }
+  },
+
+  // Подписаться на обновления в реальном времени
+  subscribeToMessages: (callback) => {
+    const channel = supabase
+      .channel('forum_messages_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'forum_messages'
+        },
+        (payload) => {
+          callback(payload.new)
+        }
+      )
+      .subscribe()
+
+    return channel
+  },
+
+  // Управление онлайн статусом
+  setOnlineStatus: async (userId, isOnline = true) => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          is_online: isOnline,
+          last_seen: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+
+      if (error) throw error
+      return data[0]
+    } catch (error) {
+      console.error('Ошибка обновления статуса:', error)
+    }
+  },
+
+  // Получить онлайн пользователей
+  getOnlineUsers: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, username, avatar_url, is_online, last_seen')
+        .eq('is_online', true)
+        .order('last_seen', { ascending: false })
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка получения онлайн пользователей:', error)
+      return []
+    }
+  }
+}
+
+// ==================== ФУНКЦИИ ДЛЯ ПРОФИЛЕЙ ====================
+
+// Получить или создать профиль
+export const getOrCreateProfile = async (userId, email, fullName) => {
+  try {
+    // Пытаемся получить существующий профиль
+    const { data: existingProfile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single()
+
+    if (!fetchError && existingProfile) {
+      return existingProfile
+    }
+
+    // Если профиля нет - создаем
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: email,
+        full_name: fullName || email.split('@')[0],
+        username: email.split('@')[0].toLowerCase(),
+        role: 'user',
+        is_online: true,
+        last_seen: new Date().toISOString(),
+        rating: 0,
+        total_points: 0,
+        theme_preference: 'light',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    if (createError) throw createError
+    return newProfile
+  } catch (error) {
+    console.error('Ошибка получения/создания профиля:', error)
+    return null
+  }
+}
+
+// ==================== АУТЕНТИФИКАЦИЯ (ваши существующие функции) ====================
+
+// Регистрация с email/password
 export const signUpWithEmail = async (email, password, fullName) => {
   try {
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -29,6 +191,11 @@ export const signUpWithEmail = async (email, password, fullName) => {
     })
     
     if (authError) throw authError
+    
+    // Создаем профиль после успешной регистрации
+    if (authData.user) {
+      await getOrCreateProfile(authData.user.id, email, fullName)
+    }
     
     return authData
   } catch (error) {
@@ -46,6 +213,12 @@ export const signInWithEmail = async (email, password) => {
     })
     
     if (error) throw error
+    
+    // Обновляем онлайн статус при входе
+    if (data.user) {
+      await forumApi.setOnlineStatus(data.user.id, true)
+    }
+    
     return data
   } catch (error) {
     console.error('Ошибка входа:', error)
@@ -71,8 +244,19 @@ export const signInWithGoogle = async () => {
 
 // Выход
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut()
-  if (error) throw error
+  try {
+    // Обновляем статус перед выходом
+    const user = await getCurrentUser()
+    if (user) {
+      await forumApi.setOnlineStatus(user.id, false)
+    }
+    
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+  } catch (error) {
+    console.error('Ошибка выхода:', error)
+    throw error
+  }
 }
 
 // Получение текущего пользователя
@@ -109,39 +293,7 @@ export const updateUserProfile = async (userId, updates) => {
   return data[0]
 }
 
-// Создание профиля (опционально, если триггер не работает)
-export const createUserProfile = async (userId, email, fullName) => {
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        email: email,
-        full_name: fullName,
-        role: 'user',
-        is_online: true,
-        last_seen: new Date().toISOString(),
-        rating: 0,
-        total_points: 0,
-        theme_preference: 'light',
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single()
-    
-    if (error) {
-      console.warn('Не удалось создать профиль:', error.message)
-      return null
-    }
-    
-    return data
-  } catch (error) {
-    console.error('Ошибка создания профиля:', error)
-    return null
-  }
-}
-
-// ==================== ОСТАЛЬНЫЕ ФУНКЦИИ ====================
+// ==================== ОСТАЛЬНЫЕ ФУНКЦИИ (ваши существующие) ====================
 
 // ФУНКЦИИ ДЛЯ КУРСОВ
 export const courseApi = {
@@ -286,6 +438,26 @@ export const videoStorage = {
       .from('edhelper-videos')
       .getPublicUrl(filePath)
     return data.publicUrl
+  },
+
+  // Загрузка изображений для форума
+  uploadForumImage: async (file, userId) => {
+    const filePath = `forum/${userId}/${Date.now()}_${file.name}`
+    
+    const { data, error } = await supabase.storage
+      .from('forum-images')
+      .upload(filePath, file, {
+        cacheControl: '86400',
+        upsert: false
+      })
+    
+    if (error) throw error
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('forum-images')
+      .getPublicUrl(filePath)
+    
+    return publicUrl
   }
 }
 
@@ -354,12 +526,18 @@ export const checkSupabaseConnection = async () => {
     
     if (storageError) throw storageError
     
+    const { data: forumMessages, error: forumError } = await supabase
+      .from('forum_messages')
+      .select('count')
+      .limit(1)
+    
     const { data: authData } = await supabase.auth.getUser()
     
     return {
       success: true,
       database: '✅ Работает',
       storage: buckets?.length ? '✅ Работает' : '❌ Нет buckets',
+      forum: forumError ? '❌ Таблица не найдена' : '✅ Работает',
       authentication: authData?.user ? '✅ Работает' : '⚠️ Не авторизован',
       buckets: buckets?.map(b => b.name) || []
     }
@@ -370,6 +548,7 @@ export const checkSupabaseConnection = async () => {
       error: error.message,
       database: '❌ Ошибка',
       storage: '❌ Ошибка',
+      forum: '❌ Ошибка',
       authentication: '❌ Ошибка'
     }
   }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '../../lib/supabase';
 import { Send, User, Clock, AlertCircle, Image as ImageIcon, Smile, Paperclip } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format } from 'date-fns';
@@ -246,9 +246,9 @@ const ForumPage = () => {
                           
                           <p className={`${message.user_id === user?.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
                             {message.content}
+                            </p>
                           </div>
                         </div>
-                      </div>
                     ))}
                     <div ref={messagesEndRef} />
                   </div>
