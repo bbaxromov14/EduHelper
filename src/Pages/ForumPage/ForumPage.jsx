@@ -52,84 +52,89 @@ const ForumPage = () => {
         };
     }, []);
 
-    // Подписка на новые сообщения
-    useEffect(() => {
-        fetchMessages();
-        fetchOnlineUsers();
-
-        // Подписка на новые сообщения в реальном времени
-        const channel = supabase
-            .channel('forum_messages')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'forum_messages'
-                },
-                async (payload) => {
-                    console.log('Новое сообщение получено:', payload);
-                    
-                    const newMessage = payload.new;
-                    
-                    // Получаем профиль для нового сообщения
+// Подписка на новые сообщения
+useEffect(() => {
+    fetchMessages();
+    fetchOnlineUsers();
+    
+    console.log('🔄 Настраиваем Real-time подписку...');
+    
+    // Канал для сообщений
+    const messagesChannel = supabase
+        .channel('forum-messages-realtime')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'forum_messages'
+            },
+            async (payload) => {
+                console.log('📨 Новое сообщение (Real-time):', payload.new);
+                
+                try {
+                    // Получаем профиль автора
                     const { data: profile } = await supabase
                         .from('profiles')
                         .select('full_name, avatar_url, username')
-                        .eq('id', newMessage.user_id)
+                        .eq('id', payload.new.user_id)
                         .single();
-
+                    
                     // Добавляем сообщение в список
                     setMessages(prev => [...prev, {
-                        ...newMessage,
-                        profiles: profile || { 
-                            full_name: 'Новый пользователь', 
+                        ...payload.new,
+                        profiles: profile || {
+                            full_name: 'Пользователь',
                             avatar_url: null,
                             username: null
                         }
                     }]);
-
-                    // Автопрокрутка к новому сообщению
-                    setTimeout(() => {
-                        scrollToBottom();
-                    }, 100);
+                    
+                    // Автопрокрутка
+                    setTimeout(scrollToBottom, 100);
+                } catch (error) {
+                    console.error('Ошибка обработки сообщения:', error);
                 }
-            )
-            .subscribe();
-
-        // Подписка на изменения статуса онлайн
-        const onlineChannel = supabase
-            .channel('online_users')
-            .on(
-                'postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'profiles'
-                },
-                (payload) => {
-                    // Если изменился статус онлайн
-                    if (payload.new.is_online !== payload.old?.is_online) {
-                        fetchOnlineUsers();
-                    }
-                }
-            )
-            .subscribe();
-
-        // Периодическое обновление онлайн статуса
-        const intervalId = setInterval(() => {
-            if (user) {
-                forumApi.updateOnlineStatus(user.id, true);
             }
-            fetchOnlineUsers();
-        }, 30000); // Каждые 30 секунд
-
-        return () => {
-            supabase.removeChannel(channel);
-            supabase.removeChannel(onlineChannel);
-            clearInterval(intervalId);
-        };
-    }, [user]);
+        )
+        .subscribe((status) => {
+            console.log('📡 Статус подписки на сообщения:', status);
+        });
+    
+    // Канал для онлайн статуса
+    const onlineChannel = supabase
+        .channel('online-status-realtime')
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles'
+            },
+            (payload) => {
+                console.log('🔄 Изменение статуса пользователя:', payload.new);
+                // Обновляем список онлайн пользователей
+                fetchOnlineUsers();
+            }
+        )
+        .subscribe((status) => {
+            console.log('📡 Статус подписки на статусы:', status);
+        });
+    
+    // Периодическое обновление на всякий случай
+    const intervalId = setInterval(() => {
+        console.log('⏰ Периодическое обновление сообщений...');
+        fetchMessages();
+        fetchOnlineUsers();
+    }, 15000); // Каждые 15 секунд
+    
+    return () => {
+        console.log('🧹 Очистка подписок...');
+        supabase.removeChannel(messagesChannel);
+        supabase.removeChannel(onlineChannel);
+        clearInterval(intervalId);
+    };
+}, []);
 
     // Автопрокрутка к новым сообщениям
     useEffect(() => {
@@ -164,7 +169,7 @@ const ForumPage = () => {
 
         try {
             let imageUrl = null;
-            
+
             // Если есть выбранное изображение, загружаем его
             if (selectedImage && typeof selectedImage !== 'string') {
                 const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
@@ -176,7 +181,7 @@ const ForumPage = () => {
 
             // Отправляем сообщение
             await forumApi.sendMessage(newMessage, user.id, imageUrl);
-            
+
             // Очищаем форму
             setNewMessage('');
             setSelectedImage(null);
@@ -195,11 +200,11 @@ const ForumPage = () => {
             const bstr = atob(arr[1]);
             let n = bstr.length;
             const u8arr = new Uint8Array(n);
-            
-            while(n--) {
+
+            while (n--) {
                 u8arr[n] = bstr.charCodeAt(n);
             }
-            
+
             resolve(new File([u8arr], filename, { type: mime }));
         });
     };
@@ -246,12 +251,12 @@ const ForumPage = () => {
     // Обработка набора текста
     const handleInputChange = (e) => {
         setNewMessage(e.target.value);
-        
+
         // Сбрасываем таймер набора текста
         if (typingTimeoutRef.current) {
             clearTimeout(typingTimeoutRef.current);
         }
-        
+
         // Устанавливаем новый таймер
         typingTimeoutRef.current = setTimeout(() => {
             setIsTyping(false);
@@ -299,7 +304,7 @@ const ForumPage = () => {
                             <AlertCircle className="inline w-5 h-5 mr-2" />
                             {error}
                         </div>
-                        <button 
+                        <button
                             onClick={() => setError(null)}
                             className="text-red-500 hover:text-red-700"
                         >
@@ -323,8 +328,8 @@ const ForumPage = () => {
                                         <div className="text-sm italic flex items-center">
                                             <div className="flex space-x-1 mr-2">
                                                 <div className="w-1 h-1 bg-white rounded-full animate-bounce"></div>
-                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                                             </div>
                                             кто-то печатает...
                                         </div>
@@ -361,8 +366,8 @@ const ForumPage = () => {
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <div className="flex items-center gap-2">
                                                             {getUserAvatar(message) ? (
-                                                                <img 
-                                                                    src={getUserAvatar(message)} 
+                                                                <img
+                                                                    src={getUserAvatar(message)}
                                                                     alt={getUserDisplayName(message)}
                                                                     className="w-8 h-8 rounded-full object-cover"
                                                                 />
@@ -391,7 +396,7 @@ const ForumPage = () => {
                                                                 className="rounded-lg max-w-full max-h-64 h-auto object-contain bg-gray-100 dark:bg-gray-800"
                                                                 onError={(e) => {
                                                                     e.target.style.display = 'none';
-                                                                    e.target.parentElement.innerHTML = 
+                                                                    e.target.parentElement.innerHTML =
                                                                         '<div class="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-500">Изображение не загружено</div>';
                                                                 }}
                                                             />
@@ -486,7 +491,7 @@ const ForumPage = () => {
                                     {/* Emoji Picker */}
                                     {showEmojiPicker && (
                                         <div className="absolute bottom-20 left-4 z-50">
-                                            <EmojiPicker 
+                                            <EmojiPicker
                                                 onEmojiClick={handleEmojiClick}
                                                 previewConfig={{
                                                     showPreview: false
@@ -527,8 +532,8 @@ const ForumPage = () => {
                                         >
                                             <div className="relative">
                                                 {onlineUser.avatar_url ? (
-                                                    <img 
-                                                        src={onlineUser.avatar_url} 
+                                                    <img
+                                                        src={onlineUser.avatar_url}
                                                         alt={onlineUser.full_name}
                                                         className="w-10 h-10 rounded-full object-cover"
                                                     />
