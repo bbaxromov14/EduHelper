@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, forumApi } from '../../lib/supabase';
 import { Send, User, Clock, AlertCircle, Image as ImageIcon, Smile, Paperclip } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format } from 'date-fns';
@@ -15,10 +15,11 @@ const ForumPage = () => {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [selectedImage, setSelectedImage] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
-    const [typingUsers, setTypingUsers] = useState([]);
+    const [isTyping, setIsTyping] = useState(false);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
+    const typingTimeoutRef = useRef(null);
 
     // Получаем текущего пользователя и его профиль
     useEffect(() => {
@@ -37,13 +38,7 @@ const ForumPage = () => {
                 setUserProfile(profile);
 
                 // Обновляем онлайн статус
-                await supabase
-                    .from('profiles')
-                    .update({
-                        is_online: true,
-                        last_seen: new Date().toISOString()
-                    })
-                    .eq('id', user.id);
+                await forumApi.updateOnlineStatus(user.id, true);
             }
         };
 
@@ -52,23 +47,19 @@ const ForumPage = () => {
         // При размонтировании обновляем статус на оффлайн
         return () => {
             if (user) {
-                supabase
-                    .from('profiles')
-                    .update({
-                        is_online: false,
-                        last_seen: new Date().toISOString()
-                    })
-                    .eq('id', user.id);
+                forumApi.updateOnlineStatus(user.id, false);
             }
         };
     }, []);
 
+    // Подписка на новые сообщения
     useEffect(() => {
         fetchMessages();
-        fetchOnlineUsers(); // ← ДОБАВЬТЕ ЭТУ СТРОКУ
+        fetchOnlineUsers();
 
+        // Подписка на новые сообщения в реальном времени
         const channel = supabase
-            .channel('forum_messages_realtime')
+            .channel('forum_messages')
             .on(
                 'postgres_changes',
                 {
@@ -77,27 +68,68 @@ const ForumPage = () => {
                     table: 'forum_messages'
                 },
                 async (payload) => {
+                    console.log('Новое сообщение получено:', payload);
+                    
                     const newMessage = payload.new;
-
+                    
                     // Получаем профиль для нового сообщения
                     const { data: profile } = await supabase
                         .from('profiles')
-                        .select('full_name, avatar_url')
+                        .select('full_name, avatar_url, username')
                         .eq('id', newMessage.user_id)
                         .single();
 
+                    // Добавляем сообщение в список
                     setMessages(prev => [...prev, {
                         ...newMessage,
-                        profiles: profile || { full_name: 'Новый пользователь', avatar_url: null }
+                        profiles: profile || { 
+                            full_name: 'Новый пользователь', 
+                            avatar_url: null,
+                            username: null
+                        }
                     }]);
+
+                    // Автопрокрутка к новому сообщению
+                    setTimeout(() => {
+                        scrollToBottom();
+                    }, 100);
                 }
             )
             .subscribe();
 
+        // Подписка на изменения статуса онлайн
+        const onlineChannel = supabase
+            .channel('online_users')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'profiles'
+                },
+                (payload) => {
+                    // Если изменился статус онлайн
+                    if (payload.new.is_online !== payload.old?.is_online) {
+                        fetchOnlineUsers();
+                    }
+                }
+            )
+            .subscribe();
+
+        // Периодическое обновление онлайн статуса
+        const intervalId = setInterval(() => {
+            if (user) {
+                forumApi.updateOnlineStatus(user.id, true);
+            }
+            fetchOnlineUsers();
+        }, 30000); // Каждые 30 секунд
+
         return () => {
             supabase.removeChannel(channel);
+            supabase.removeChannel(onlineChannel);
+            clearInterval(intervalId);
         };
-    }, []);
+    }, [user]);
 
     // Автопрокрутка к новым сообщениям
     useEffect(() => {
@@ -106,35 +138,11 @@ const ForumPage = () => {
 
     const fetchMessages = async () => {
         try {
-            // Получаем сообщения
-            const { data: messages, error } = await supabase
-                .from('forum_messages')
-                .select('*')
-                .order('created_at', { ascending: true })
-                .limit(100);
-
-            if (error) throw error;
-
-            // Получаем все user_id из сообщений
-            const userIds = [...new Set(messages.map(m => m.user_id))];
-
-            // Получаем профили для этих пользователей
-            const { data: profiles } = await supabase
-                .from('profiles')
-                .select('id, full_name, avatar_url')
-                .in('id', userIds);
-
-            // Объединяем сообщения с профилями
-            const messagesWithProfiles = messages.map(message => ({
-                ...message,
-                profiles: profiles?.find(p => p.id === message.user_id) || {
-                    full_name: 'Аноним',
-                    avatar_url: null
-                }
-            }));
-
-            setMessages(messagesWithProfiles);
+            setLoading(true);
+            const messages = await forumApi.getForumMessages();
+            setMessages(messages);
         } catch (err) {
+            console.error('Ошибка загрузки сообщений:', err);
             setError(err.message);
         } finally {
             setLoading(false);
@@ -143,15 +151,8 @@ const ForumPage = () => {
 
     const fetchOnlineUsers = async () => {
         try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('id, full_name, email, avatar_url, is_online, last_seen')
-                .eq('is_online', true)
-                .order('last_seen', { ascending: false })
-                .limit(20);
-
-            if (error) throw error;
-            setOnlineUsers(data || []);
+            const users = await forumApi.getOnlineUsers();
+            setOnlineUsers(users);
         } catch (err) {
             console.error('Ошибка загрузки онлайн пользователей:', err);
         }
@@ -159,38 +160,24 @@ const ForumPage = () => {
 
     const sendMessage = async (e) => {
         e.preventDefault();
-        if (!newMessage.trim() || !user) return;
+        if (!newMessage.trim() && !selectedImage) return;
 
         try {
-            // ПРОСТОЙ запрос без сложного JOIN
-            const { data, error } = await supabase
-                .from('forum_messages')
-                .insert([
-                    {
-                        content: newMessage,
-                        user_id: user.id,
-                        image_url: selectedImage,
-                        type: selectedImage ? 'image' : 'text'
-                    }
-                ])
-                .select() // Убираем сложный SELECT с JOIN
-                .single();
+            let imageUrl = null;
+            
+            // Если есть выбранное изображение, загружаем его
+            if (selectedImage && typeof selectedImage !== 'string') {
+                const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
+                imageUrl = await forumApi.uploadForumImage(file, user.id);
+            } else if (selectedImage) {
+                // Если это уже строка (base64 или URL)
+                imageUrl = selectedImage;
+            }
 
-            if (error) throw error;
-
-            // Получаем профиль ОТДЕЛЬНО
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('full_name, avatar_url')
-                .eq('id', user.id)
-                .single();
-
-            // Добавляем сообщение в state
-            setMessages(prev => [...prev, {
-                ...data,
-                profiles: profile || { full_name: user.email?.split('@')[0] || 'Вы', avatar_url: null }
-            }]);
-
+            // Отправляем сообщение
+            await forumApi.sendMessage(newMessage, user.id, imageUrl);
+            
+            // Очищаем форму
             setNewMessage('');
             setSelectedImage(null);
             setShowEmojiPicker(false);
@@ -198,6 +185,23 @@ const ForumPage = () => {
             console.error('Ошибка отправки:', err);
             setError(err.message);
         }
+    };
+
+    // Функция для конвертации DataURL в File
+    const dataURLtoFile = (dataurl, filename) => {
+        return new Promise((resolve) => {
+            const arr = dataurl.split(',');
+            const mime = arr[0].match(/:(.*?);/)[1];
+            const bstr = atob(arr[1]);
+            let n = bstr.length;
+            const u8arr = new Uint8Array(n);
+            
+            while(n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            
+            resolve(new File([u8arr], filename, { type: mime }));
+        });
     };
 
     const scrollToBottom = () => {
@@ -239,6 +243,21 @@ const ForumPage = () => {
         setShowEmojiPicker(false);
     };
 
+    // Обработка набора текста
+    const handleInputChange = (e) => {
+        setNewMessage(e.target.value);
+        
+        // Сбрасываем таймер набора текста
+        if (typingTimeoutRef.current) {
+            clearTimeout(typingTimeoutRef.current);
+        }
+        
+        // Устанавливаем новый таймер
+        typingTimeoutRef.current = setTimeout(() => {
+            setIsTyping(false);
+        }, 1000);
+    };
+
     // Получаем имя пользователя для отображения
     const getUserDisplayName = (message) => {
         if (message.profiles?.full_name) {
@@ -251,6 +270,14 @@ const ForumPage = () => {
             return userProfile.full_name || 'Вы';
         }
         return 'Аноним';
+    };
+
+    // Получаем аватар пользователя
+    const getUserAvatar = (message) => {
+        if (message.profiles?.avatar_url) {
+            return message.profiles.avatar_url;
+        }
+        return null;
     };
 
     return (
@@ -267,9 +294,17 @@ const ForumPage = () => {
                 </div>
 
                 {error && (
-                    <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded-lg">
-                        <AlertCircle className="inline w-5 h-5 mr-2" />
-                        {error}
+                    <div className="mb-4 p-4 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 rounded-lg flex items-center justify-between">
+                        <div>
+                            <AlertCircle className="inline w-5 h-5 mr-2" />
+                            {error}
+                        </div>
+                        <button 
+                            onClick={() => setError(null)}
+                            className="text-red-500 hover:text-red-700"
+                        >
+                            ×
+                        </button>
                     </div>
                 )}
 
@@ -284,9 +319,14 @@ const ForumPage = () => {
                                         <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
                                         <span>Онлайн: {onlineUsers.length} пользователей</span>
                                     </div>
-                                    {typingUsers.length > 0 && (
-                                        <div className="text-sm italic">
-                                            {typingUsers.join(', ')} печатает...
+                                    {isTyping && (
+                                        <div className="text-sm italic flex items-center">
+                                            <div className="flex space-x-1 mr-2">
+                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce"></div>
+                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                                                <div className="w-1 h-1 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                            </div>
+                                            кто-то печатает...
                                         </div>
                                     )}
                                 </div>
@@ -320,11 +360,20 @@ const ForumPage = () => {
                                                     {/* Заголовок сообщения */}
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <div className="flex items-center gap-2">
-                                                            <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 flex items-center justify-center text-white">
-                                                                <User className="w-5 h-5" />
-                                                            </div>
+                                                            {getUserAvatar(message) ? (
+                                                                <img 
+                                                                    src={getUserAvatar(message)} 
+                                                                    alt={getUserDisplayName(message)}
+                                                                    className="w-8 h-8 rounded-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-r from-blue-400 to-purple-400 flex items-center justify-center text-white">
+                                                                    <User className="w-5 h-5" />
+                                                                </div>
+                                                            )}
                                                             <span className="font-semibold">
                                                                 {getUserDisplayName(message)}
+                                                                {message.user_id === user?.id && ' (Вы)'}
                                                             </span>
                                                         </div>
                                                         <span className="text-xs opacity-75">
@@ -334,19 +383,26 @@ const ForumPage = () => {
                                                     </div>
 
                                                     {/* Контент сообщения */}
-                                                    {message.type === 'image' && message.image_url ? (
+                                                    {message.image_url && (
                                                         <div className="mb-2">
                                                             <img
                                                                 src={message.image_url}
                                                                 alt="Прикрепленное изображение"
-                                                                className="rounded-lg max-w-full max-h-64 h-auto object-contain"
+                                                                className="rounded-lg max-w-full max-h-64 h-auto object-contain bg-gray-100 dark:bg-gray-800"
+                                                                onError={(e) => {
+                                                                    e.target.style.display = 'none';
+                                                                    e.target.parentElement.innerHTML = 
+                                                                        '<div class="p-4 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-500">Изображение не загружено</div>';
+                                                                }}
                                                             />
                                                         </div>
-                                                    ) : null}
+                                                    )}
 
-                                                    <p className={`break-words ${message.user_id === user?.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
-                                                        {message.content}
-                                                    </p>
+                                                    {message.content && (
+                                                        <p className={`break-words ${message.user_id === user?.id ? 'text-white' : 'text-gray-800 dark:text-gray-200'}`}>
+                                                            {message.content}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
@@ -357,7 +413,7 @@ const ForumPage = () => {
 
                             {/* Форма отправки сообщения */}
                             {user ? (
-                                <form onSubmit={sendMessage} className="p-4 border-t dark:border-gray-700">
+                                <form onSubmit={sendMessage} className="p-4 border-t dark:border-gray-700 relative">
                                     {selectedImage && (
                                         <div className="mb-3 relative">
                                             <img
@@ -411,7 +467,7 @@ const ForumPage = () => {
                                         <input
                                             type="text"
                                             value={newMessage}
-                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onChange={handleInputChange}
                                             placeholder="Напишите сообщение..."
                                             className="flex-1 px-4 py-3 bg-gray-100 dark:bg-gray-700 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
                                         />
@@ -419,7 +475,7 @@ const ForumPage = () => {
                                         {/* Кнопка отправки */}
                                         <button
                                             type="submit"
-                                            disabled={!newMessage.trim()}
+                                            disabled={!newMessage.trim() && !selectedImage}
                                             className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
                                             aria-label="Отправить сообщение"
                                         >
@@ -430,7 +486,12 @@ const ForumPage = () => {
                                     {/* Emoji Picker */}
                                     {showEmojiPicker && (
                                         <div className="absolute bottom-20 left-4 z-50">
-                                            <EmojiPicker onEmojiClick={handleEmojiClick} />
+                                            <EmojiPicker 
+                                                onEmojiClick={handleEmojiClick}
+                                                previewConfig={{
+                                                    showPreview: false
+                                                }}
+                                            />
                                         </div>
                                     )}
                                 </form>
@@ -465,17 +526,26 @@ const ForumPage = () => {
                                             className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl transition-colors"
                                         >
                                             <div className="relative">
-                                                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 flex items-center justify-center text-white">
-                                                    <User className="w-5 h-5" />
-                                                </div>
+                                                {onlineUser.avatar_url ? (
+                                                    <img 
+                                                        src={onlineUser.avatar_url} 
+                                                        alt={onlineUser.full_name}
+                                                        className="w-10 h-10 rounded-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-blue-400 flex items-center justify-center text-white">
+                                                        <User className="w-5 h-5" />
+                                                    </div>
+                                                )}
                                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-gray-800"></div>
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-medium text-gray-800 dark:text-white truncate">
                                                     {onlineUser.full_name || onlineUser.email?.split('@')[0] || 'Пользователь'}
+                                                    {onlineUser.id === user?.id && ' (Вы)'}
                                                 </p>
                                                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                                                    онлайн
+                                                    был(а) {format(new Date(onlineUser.last_seen), 'HH:mm', { locale: ru })}
                                                 </p>
                                             </div>
                                         </div>
@@ -514,8 +584,11 @@ const ForumPage = () => {
                                     fetchMessages();
                                     fetchOnlineUsers();
                                 }}
-                                className="w-full mt-4 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+                                className="w-full mt-4 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg transition-colors flex items-center justify-center gap-2"
                             >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
                                 Обновить
                             </button>
                         </div>
