@@ -20,213 +20,215 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ==================== ФУНКЦИИ ДЛЯ ФОРУМА ====================
 
 export const forumApi = {
-  // Получить сообщения форума с реакциями
-  getForumMessages: async () => {
-    try {
-      const { data, error } = await supabase
-        .from('forum_messages')
-        .select(`
-          *,
-          profiles:user_id (
-            full_name,
-            avatar_url,
-            username
-          ),
-          message_reactions (
-            id,
-            user_id,
-            reaction_type,
-            created_at,
-            profiles:user_id (
-              full_name,
-              avatar_url
-            )
-          )
-        `)
-        .order('created_at', { ascending: true })
-        .limit(100)
-
-      if (error) throw error
-      return data || []
-    } catch (error) {
-      console.error('Ошибка загрузки сообщений:', error)
-      return []
-    }
-  },
-
-  // Получить сообщение с реакциями
-  getMessageWithReactions: async (messageId) => {
-    try {
-      const { data, error } = await supabase
-        .from('forum_messages')
-        .select(`
-          *,
-          profiles:user_id (
-            full_name,
-            avatar_url,
-            username
-          ),
-          message_reactions (
-            id,
-            user_id,
-            reaction_type,
-            created_at,
-            profiles:user_id (
-              full_name,
-              avatar_url
-            )
-          )
-        `)
-        .eq('id', messageId)
-        .single()
-
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Ошибка загрузки сообщения:', error)
-      return null
-    }
-  },
-
-  // Добавить реакцию
-  addReaction: async (messageId, userId, reactionType) => {
-    try {
-      // Сначала проверяем, есть ли уже реакция от этого пользователя
-      const { data: existingReaction } = await supabase
-        .from('message_reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .eq('reaction_type', reactionType)
-        .single()
-
-      if (existingReaction) {
-        // Если реакция уже существует, удаляем ее (переключатель)
-        const { error } = await supabase
-          .from('message_reactions')
-          .delete()
-          .eq('id', existingReaction.id)
-        
-        if (error) throw error
-        return { deleted: true, reactionId: existingReaction.id }
-      }
-
-      // Удаляем старую реакцию того же типа, если она есть
-      const { data: oldReaction } = await supabase
-        .from('message_reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .single()
-
-      if (oldReaction) {
-        await supabase
-          .from('message_reactions')
-          .delete()
-          .eq('id', oldReaction.id)
-      }
-
-      // Добавляем новую реакцию
-      const { data, error } = await supabase
-        .from('message_reactions')
-        .insert({
-          message_id: messageId,
-          user_id: userId,
-          reaction_type: reactionType
-        })
-        .select(`
-          *,
+// Получить сообщения форума с реакциями (ИСПРАВЛЕНО)
+getForumMessages: async () => {
+  try {
+    const { data, error } = await supabase
+      .from('forum_messages')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url,
+          username
+        ),
+        message_reactions (
+          id,
+          user_id,
+          reaction_type,
+          created_at,
           profiles:user_id (
             full_name,
             avatar_url
           )
-        `)
-        .single()
-      
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Ошибка добавления реакции:', error)
-      throw error
-    }
-  },
-  
-  // Удалить реакцию по ID
-  removeReaction: async (reactionId) => {
-    try {
-      const { error } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('id', reactionId)
-      
-      if (error) throw error
-    } catch (error) {
-      console.error('Ошибка удаления реакции:', error)
-      throw error
-    }
-  },
-  
-  // Удалить сообщение
-  deleteMessage: async (messageId) => {
-    try {
-      // Сначала удаляем все реакции сообщения
-      const { error: reactionsError } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-      
-      if (reactionsError) throw reactionsError
+        )
+      `)
+      .order('created_at', { ascending: true })
+      .limit(100)
 
-      // Затем удаляем само сообщение
-      const { error } = await supabase
-        .from('forum_messages')
-        .delete()
-        .eq('id', messageId)
-      
-      if (error) throw error
-    } catch (error) {
-      console.error('Ошибка удаления сообщения:', error)
-      throw error
-    }
-  },
+    if (error) throw error
+    return data || []
+  } catch (error) {
+    console.error('Ошибка загрузки сообщений:', error)
+    return []
+  }
+},
 
-  // Отправить сообщение (объединенная версия)
-  sendMessage: async (content, userId, imageUrl = null, replyToId = null) => {
-    try {
-      const messageData = {
-        content,
-        user_id: userId,
-        type: imageUrl ? 'image' : 'text'
-      }
-
-      // Добавляем опциональные поля
-      if (imageUrl) {
-        messageData.image_url = imageUrl
-      }
-      if (replyToId) {
-        messageData.reply_to_id = replyToId
-      }
-
-      const { data, error } = await supabase
-        .from('forum_messages')
-        .insert([messageData])
-        .select(`
-          *,
+// Получить сообщение с реакциями (ИСПРАВЛЕНО)
+getMessageWithReactions: async (messageId) => {
+  try {
+    const { data, error } = await supabase
+      .from('forum_messages')
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url,
+          username
+        ),
+        message_reactions (
+          id,
+          user_id,
+          reaction_type,
+          created_at,
           profiles:user_id (
             full_name,
-            avatar_url,
-            username
+            avatar_url
           )
-        `)
-        .single()
+        )
+      `)
+      .eq('id', messageId)
+      .single()
 
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Ошибка загрузки сообщения:', error)
+    return null
+  }
+},
+
+// Добавить реакцию (ИСПРАВЛЕНО - убедитесь, что таблица существует)
+addReaction: async (messageId, userId, reactionType) => {
+  try {
+    // Сначала проверяем, есть ли уже реакция от этого пользователя
+    const { data: existingReaction } = await supabase
+      .from('message_reactions')
+      .select('id')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .eq('reaction_type', reactionType)
+      .single()
+
+    if (existingReaction) {
+      // Если реакция уже существует, удаляем ее (переключатель)
+      const { error } = await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('id', existingReaction.id)
+      
       if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Ошибка отправки сообщения:', error)
-      throw error
+      return { deleted: true, reactionId: existingReaction.id }
     }
-  },
+
+    // Удаляем старую реакцию того же пользователя, если она есть
+    const { data: oldReaction } = await supabase
+      .from('message_reactions')
+      .select('id')
+      .eq('message_id', messageId)
+      .eq('user_id', userId)
+      .single()
+
+    if (oldReaction) {
+      await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('id', oldReaction.id)
+    }
+
+    // Добавляем новую реакцию
+    const { data, error } = await supabase
+      .from('message_reactions')
+      .insert({
+        message_id: messageId,
+        user_id: userId,
+        reaction_type: reactionType,
+        created_at: new Date().toISOString()
+      })
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .single()
+    
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Ошибка добавления реакции:', error)
+    throw error
+  }
+},
+
+// Удалить реакцию по ID
+removeReaction: async (reactionId) => {
+  try {
+    const { error } = await supabase
+      .from('message_reactions')
+      .delete()
+      .eq('id', reactionId)
+    
+    if (error) throw error
+  } catch (error) {
+    console.error('Ошибка удаления реакции:', error)
+    throw error
+  }
+},
+
+// Удалить сообщение
+deleteMessage: async (messageId) => {
+  try {
+    // Сначала удаляем все реакции сообщения
+    const { error: reactionsError } = await supabase
+      .from('message_reactions')
+      .delete()
+      .eq('message_id', messageId)
+    
+    if (reactionsError) throw reactionsError
+
+    // Затем удаляем само сообщение
+    const { error } = await supabase
+      .from('forum_messages')
+      .delete()
+      .eq('id', messageId)
+    
+    if (error) throw error
+  } catch (error) {
+    console.error('Ошибка удаления сообщения:', error)
+    throw error
+  }
+},
+
+// Отправить сообщение
+sendMessage: async (content, userId, imageUrl = null, replyToId = null) => {
+  try {
+    const messageData = {
+      content,
+      user_id: userId,
+      type: imageUrl ? 'image' : 'text',
+      created_at: new Date().toISOString()
+    }
+
+    // Добавляем опциональные поля
+    if (imageUrl) {
+      messageData.image_url = imageUrl
+    }
+    if (replyToId) {
+      messageData.reply_to_id = replyToId
+    }
+
+    const { data, error } = await supabase
+      .from('forum_messages')
+      .insert([messageData])
+      .select(`
+        *,
+        profiles:user_id (
+          full_name,
+          avatar_url,
+          username
+        )
+      `)
+      .single()
+
+    if (error) throw error
+    return data
+  } catch (error) {
+    console.error('Ошибка отправки сообщения:', error)
+    throw error
+  }
+},
 
   // Обновить онлайн статус
   updateOnlineStatus: async (userId, isOnline = true) => {
