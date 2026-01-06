@@ -31,12 +31,6 @@ let items = [
         path: "about", 
         element: <About />
     },
-    {
-        id: 5,
-        title: "Forum",
-        path: "forum", 
-        element: <ForumPage />
-    },
 ]
 
 export default items

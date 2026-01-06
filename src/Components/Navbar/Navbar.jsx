@@ -323,17 +323,14 @@ const Navbar = () => {
                             </NavLink>
                         ))}
                         
-                        {/* Форум в мобильном меню */}
-                        {isPremium && (
                             <NavLink 
                                 to="/forum" 
                                 onClick={() => setMobileMenuOpen(false)} 
                                 className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                             >
-                                Forum ⭐
+                                Forum
                             </NavLink>
-                        )}
-                        
+                            
                         {/* Донат в мобильном меню */}
                         <NavLink 
                             to="/donate" 
