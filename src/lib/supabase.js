@@ -43,7 +43,7 @@ export const forumApi = {
               avatar_url
             )
           ),
-          reactions:message_reactions (
+          reactions:message_reactions!message_reactions_message_id_fkey (
             id,
             reaction,
             user_id,
@@ -88,7 +88,7 @@ export const forumApi = {
               avatar_url
             )
           ),
-          reactions:message_reactions (
+          reactions:message_reactions!message_reactions_message_id_fkey (
             id,
             reaction,
             user_id,
@@ -143,7 +143,7 @@ export const forumApi = {
               avatar_url
             )
           ),
-          reactions:message_reactions (
+          reactions:message_reactions!message_reactions_message_id_fkey (
             id,
             reaction,
             user_id,
@@ -193,7 +193,7 @@ export const forumApi = {
               avatar_url
             )
           ),
-          reactions:message_reactions (
+          reactions:message_reactions!message_reactions_message_id_fkey (
             id,
             reaction,
             user_id,
@@ -457,7 +457,7 @@ export const forumApi = {
               avatar_url
             )
           ),
-          reactions:message_reactions (
+          reactions:message_reactions!message_reactions_message_id_fkey (
             id,
             reaction,
             user_id,
