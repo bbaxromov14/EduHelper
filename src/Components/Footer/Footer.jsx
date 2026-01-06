@@ -28,7 +28,6 @@ const Footer = () => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        console.log("Пользователь не авторизован");
         return;
       }
 
@@ -51,13 +50,11 @@ const Footer = () => {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (!user) {
-        console.log("Пользователь не авторизован");
         return;
       }
 
       // Сохраняем реферальный код
       localStorage.setItem(`referral_code_${user.id}`, code);
-      console.log("Реферальный код сохранен:", code);
 
     } catch (error) {
       console.error("Ошибка сохранения реферального кода:", error);

@@ -636,7 +636,6 @@ const AdminPanel = () => {
                     transactionId: `admin-manual-${Date.now()}`
                   });
 
-                  console.log('Premium активирован!', result);
 
                   if (result.success) {
                     alert(`Premium успешно активирован!\nТип: ${result.data.premium_type}\nДо: ${result.premium_until === 'lifetime' ? 'ПОЖИЗНЕННО' : new Date(result.premium_until).toLocaleDateString('uz-UZ')}`);

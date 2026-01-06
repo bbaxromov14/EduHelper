@@ -13,32 +13,23 @@ export const AuthProvider = ({ children }) => {
   // Функция обработки реферала
   const handleReferralAfterAuth = useCallback(async (userId, userEmail) => {
     try {
-      // Проверяем, есть ли активная сессия
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) {
-        console.warn("⚠️ Нет активной сессии, пропускаем обработку реферала");
         return;
       }
 
-      console.log("🔑 Активная сессия:", session.user.email);
-
-      // Проверяем, есть ли сохраненный реферальный код
       const pendingCode = localStorage.getItem("pending_referral_code");
       const urlCode = localStorage.getItem("referral_code_from_url");
 
       const codeToUse = pendingCode || urlCode;
 
       if (!codeToUse) {
-        console.log("ℹ️ Нет реферального кода для обработки");
         return;
       }
 
-      console.log("🎯 Найден реферальный код для обработки:", codeToUse);
-
       await processReferral(userId, userEmail, codeToUse);
 
-      // Очищаем ВСЕ реферальные данные после успешной обработки
       localStorage.removeItem("pending_referral_code");
       localStorage.removeItem("referral_code_from_url");
       localStorage.removeItem('pending_user_email');
@@ -46,28 +37,17 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem('pending_referral_data');
 
     } catch (error) {
-      console.error("💥 Ошибка в handleReferralAfterAuth:", error);
     }
   }, []);
 
   const processReferral = async (userId, userEmail, referralCode) => {
     try {
-      console.log("🎯 === START processReferral ===");
-      console.log("📝 Параметры:", { userId, userEmail, referralCode });
-
-      // Проверка сессии
       const { data: { session } } = await supabase.auth.getSession();
-      console.log("📱 Сессия:", session?.user?.email);
 
       if (!session) {
-        console.error("❌ Нет активной сессии! Прерываем");
         return;
       }
 
-      console.log("✅ Активная сессия найдена:", session.user.email);
-
-      // 1. Находим пользователя, который создал этот код
-      console.log("🔍 Ищем реферальный код...");
       const { data: referrerData, error: referrerError } = await supabase
         .from('referral_codes')
         .select('user_id')
@@ -76,13 +56,9 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (referrerError) {
-        console.error("❌ Ошибка поиска кода:", referrerError);
-        console.error("Детали:", referrerError.message);
         return;
       }
 
-      console.log("✅ Найден реферальный код, создатель:", referrerData.user_id);
-      console.log("🔄 Проверяем возможность вставки...");
       const testInsert = {
         referrer_id: referrerData.user_id,
         referred_email: userEmail,
@@ -93,37 +69,19 @@ export const AuthProvider = ({ children }) => {
         reward_given: false
       };
       
-      console.log("📝 Тестовые данные:", testInsert);
-      
-      // Попробуйте без .single() сначала
       const { data: testData, error: testError } = await supabase
         .from('referrals')
         .insert(testInsert)
         .select();
       
-      console.log("📊 Результат теста:", testData);
-      console.log("❌ Ошибка теста:", testError);
-      
       if (testError) {
-        console.error("💥 Детали ошибки:", {
-          message: testError.message,
-          code: testError.code,
-          details: testError.details,
-          hint: testError.hint
-        });
-        return; // Прерываем если ошибка
-      }
-      
-      console.log("✅ Тестовая вставка успешна!");
-
-      // 2. Проверяем, не пытается ли пользователь использовать свой же код
-      if (referrerData.user_id === userId) {
-        console.log("❌ Пользователь не может использовать свой код");
         return;
       }
 
-      // 3. Проверяем, не существует ли уже реферал
-      console.log("🔍 Проверяем существующий реферал...");
+      if (referrerData.user_id === userId) {
+        return;
+      }
+
       const { data: existingReferral, error: existingError } = await supabase
         .from('referrals')
         .select('id')
@@ -132,16 +90,12 @@ export const AuthProvider = ({ children }) => {
         .maybeSingle();
 
       if (existingError) {
-        console.warn("⚠️ Ошибка проверки реферала:", existingError);
       }
 
       if (existingReferral) {
-        console.log("✅ Реферал уже существует");
         return;
       }
 
-      // 4. Сохраняем реферал
-      console.log("💾 Сохраняем реферал в базу...");
       const { data: newReferral, error: referralError } = await supabase
         .from('referrals')
         .insert({
@@ -157,27 +111,16 @@ export const AuthProvider = ({ children }) => {
         .single();
 
       if (referralError) {
-        console.error("❌ Ошибка сохранения:", referralError);
-        console.error("Код ошибки:", referralError.code);
-        console.error("Сообщение:", referralError.message);
-        console.error("Детали:", referralError.details);
         return;
       }
 
-      console.log("🎉 Реферал успешно сохранен!", newReferral);
-      console.log("🏁 === END processReferral ===");
-
     } catch (error) {
-      console.error("💥 === ERROR in processReferral ===");
-      console.error("Ошибка:", error);
-      console.error("Stack:", error.stack);
     }
   };
 
   // 🔐 Регистрация
   const register = async (fullName, email, password) => {
     try {
-      // ТОЛЬКО регистрация в auth - профиль создастся через триггер
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
@@ -191,21 +134,14 @@ export const AuthProvider = ({ children }) => {
 
       if (authError) throw authError;
 
-      // НЕ обрабатываем реферал здесь!
-      // Пользователь должен сначала подтвердить email
-      // Реферальный код останется в localStorage и обработается после подтверждения
-
       const urlCode = localStorage.getItem("referral_code_from_url");
       if (urlCode && authData.user) {
-        console.log("✅ Реферальный код сохранен для обработки после подтверждения email");
-        // Сохраняем данные пользователя для отложенной обработки
         localStorage.setItem('pending_user_email', email);
         localStorage.setItem('pending_user_id', authData.user.id);
       }
 
       return authData.user;
     } catch (error) {
-      console.error("Ошибка регистрации:", error);
       throw error;
     }
   };
@@ -217,7 +153,6 @@ export const AuthProvider = ({ children }) => {
       if (error) throw error;
 
       if (data.user?.id) {
-        // Обновляем статус
         supabase
           .from('profiles')
           .update({
@@ -227,14 +162,12 @@ export const AuthProvider = ({ children }) => {
           .eq('id', data.user.id)
           .then(({ error: updateError }) => {
             if (updateError) {
-              console.warn('Не удалось обновить статус входа:', updateError.message);
             }
           });
       }
 
       return data.user;
     } catch (error) {
-      console.error("Ошибка входа:", error);
       throw error;
     }
   };
@@ -242,7 +175,6 @@ export const AuthProvider = ({ children }) => {
   // 🔵 Google авторизация
   const loginWithGoogle = async () => {
     try {
-      // Сохраняем реферальный код перед редиректом
       const urlCode = localStorage.getItem("referral_code_from_url");
       if (urlCode) {
         localStorage.setItem("pending_referral_code", urlCode);
@@ -262,7 +194,6 @@ export const AuthProvider = ({ children }) => {
 
       if (error) throw error;
     } catch (error) {
-      console.error("Ошибка Google входа:", error);
       throw error;
     }
   };
@@ -271,7 +202,6 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       if (user?.id) {
-        // Обновляем статус
         try {
           await supabase
             .from('profiles')
@@ -281,7 +211,6 @@ export const AuthProvider = ({ children }) => {
             })
             .eq('id', user.id);
         } catch (updateError) {
-          console.warn("Не удалось обновить статус выхода:", updateError.message);
         }
       }
 
@@ -291,18 +220,15 @@ export const AuthProvider = ({ children }) => {
       setUser(null);
       setIsAuthenticated(false);
 
-      // Очищаем все localStorage кроме реферальных кодов
       const referralCode = localStorage.getItem(`referral_code_${user?.id}`);
       localStorage.clear();
       if (referralCode && user?.id) {
         localStorage.setItem(`referral_code_${user.id}`, referralCode);
       }
 
-      // Перенаправляем на главную
       window.location.href = '/';
 
     } catch (error) {
-      console.error("Ошибка выхода:", error);
       setUser(null);
       setIsAuthenticated(false);
       localStorage.clear();
@@ -313,15 +239,6 @@ export const AuthProvider = ({ children }) => {
   const updateUserState = async (session) => {
     try {
       if (session?.user) {
-        console.log("📊 Статус рефералов для пользователя:", {
-          email: session.user.email,
-          emailConfirmed: session.user.email_confirmed_at,
-          hasReferralCode: !!(localStorage.getItem("referral_code_from_url") ||
-            localStorage.getItem("pending_referral_code")),
-          pendingEmail: localStorage.getItem('pending_user_email'),
-          pendingUserId: localStorage.getItem('pending_user_id')
-        });
-
         const googleName = session.user.user_metadata?.full_name || '';
         const fallbackName = session.user.email?.split('@')[0] || 'User';
 
@@ -339,14 +256,10 @@ export const AuthProvider = ({ children }) => {
         setUser(mergedUser);
         setIsAuthenticated(true);
 
-        // Обрабатываем рефералы только если email подтвержден
         const isEmailConfirmed = Boolean(session.user.email_confirmed_at);
         const isGoogleUser = session.user.app_metadata?.provider === 'google';
 
         if (session.user.email && (isEmailConfirmed || isGoogleUser)) {
-          console.log("✅ Email подтвержден, проверяем рефералы...");
-
-          // Проверяем есть ли уже реферал для этого email
           const referralCode = localStorage.getItem("referral_code_from_url") ||
             localStorage.getItem("pending_referral_code");
 
@@ -359,35 +272,23 @@ export const AuthProvider = ({ children }) => {
               .maybeSingle();
 
             if (existingReferral) {
-              console.log("✅ Реферал уже существует, очищаем данные...");
-              // Очищаем данные
               localStorage.removeItem('pending_user_email');
               localStorage.removeItem('pending_user_id');
               localStorage.removeItem("referral_code_from_url");
               localStorage.removeItem("pending_referral_code");
             } else {
-              console.log("🔄 Обрабатываем реферал...");
               await handleReferralAfterAuth(session.user.id, session.user.email);
             }
-          } else {
-            console.log("ℹ️ Нет реферального кода для обработки");
           }
         } else {
-          console.log("⚠️ Email не подтвержден, сохраняем для отложенной обработки");
-
-          // Сохраняем в localStorage для обработки после подтверждения
           localStorage.setItem('pending_user_email', session.user.email);
           localStorage.setItem('pending_user_id', session.user.id);
         }
       } else {
-        // Сессия null или user null
-        console.log("ℹ️ Нет активной сессии");
         setUser(null);
         setIsAuthenticated(false);
       }
     } catch (error) {
-      console.error("Ошибка в updateUserState:", error);
-      // При ошибке также сбрасываем состояние
       setUser(null);
       setIsAuthenticated(false);
     } finally {
@@ -400,10 +301,8 @@ export const AuthProvider = ({ children }) => {
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        console.log("🔍 Инициализация аутентификации, сессия:", session);
         await updateUserState(session);
       } catch (error) {
-        console.error("Ошибка инициализации аутентификации:", error);
         setUser(null);
         setIsAuthenticated(false);
         setLoading(false);
@@ -414,7 +313,6 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log("🔄 Изменение состояния аутентификации:", event, session);
         await updateUserState(session);
       }
     );
@@ -435,7 +333,6 @@ export const AuthProvider = ({ children }) => {
           .update({ last_seen: new Date().toISOString() })
           .eq('id', user.id);
       } catch (error) {
-        console.warn("Ошибка обновления онлайн статуса:", error.message);
       }
     };
 
@@ -458,7 +355,6 @@ export const AuthProvider = ({ children }) => {
     >
       {children}
 
-      {/* Глобальный лоадер пока loading */}
       {loading && (
         <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
           <div className="text-center">

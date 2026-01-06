@@ -19,7 +19,6 @@ const Login = () => {
   useEffect(() => {
     const refCode = searchParams.get("ref");
     if (refCode) {
-      console.log("Найден реферальный код:", refCode);
       // Сохраняем код в localStorage для последующей обработки
       localStorage.setItem("referral_code_from_url", refCode);
     }
@@ -108,7 +107,6 @@ const Login = () => {
     // Показываем сообщение о реферальном коде только при регистрации
     if (!isLogin && savedCode) {
       // Можно показать уведомление, что код сохранен
-      console.log("Реферальный код активен для регистрации:", savedCode);
     }
   };
 

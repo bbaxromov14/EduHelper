@@ -38,7 +38,6 @@ const DonateSystem = () => {
         script.async = true;
         
         script.onload = () => {
-          console.log('PayPal SDK loaded successfully');
           setPaypalLoaded(true);
           renderPayPalButtons();
         };
@@ -115,7 +114,6 @@ const DonateSystem = () => {
           if (error) throw error;
 
           setDonationId(donation.id);
-          console.log('Donation created:', donation.id);
 
           // 3. Создаем заказ в PayPal
           return actions.order.create({
@@ -169,7 +167,6 @@ const DonateSystem = () => {
 
           // 1. Захватываем платеж
           const details = await actions.order.capture();
-          console.log('Payment captured:', details);
 
           // 2. Обновляем запись доната в базе
           const { error: updateError } = await supabase
@@ -226,7 +223,6 @@ const DonateSystem = () => {
 
       // При отмене
       onCancel: (data) => {
-        console.log('Payment cancelled:', data);
         setIsProcessing(false);
         setPaymentStatus('cancelled');
         

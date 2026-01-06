@@ -28,7 +28,6 @@ const Subjects = () => {
       const newStatus = !!status?.is_active;
       setPremiumStatus({ is_active: newStatus });
 
-      console.log('Premium статус обновлён:', newStatus ? 'АКТИВЕН ⭐' : 'НЕАКТИВЕН');
     } catch (error) {
       console.error('Ошибка проверки Premium:', error);
       setPremiumStatus({ is_active: false });
@@ -55,7 +54,6 @@ const Subjects = () => {
           filter: `id=eq.${currentUserId}`
         },
         (payload) => {
-          console.log('Профиль обновлён через Realtime:', payload.new);
           updatePremiumStatus();
         }
       )

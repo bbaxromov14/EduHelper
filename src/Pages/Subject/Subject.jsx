@@ -75,7 +75,6 @@ const Subject = () => {
               }
             }
 
-            console.log('✅ Загруженные завершенные уроки:', completedLessons.length, 'из', lessons.length);
           } catch (err) {
             console.error('Ошибка загрузки прогресса:', err);
           }
@@ -109,7 +108,6 @@ const Subject = () => {
           completedCount
         });
 
-        console.log('📊 Итоговый прогресс:', {
           уроки: lessons.length,
           завершено: completedCount,
           процент: progressPercent + '%'
@@ -176,7 +174,6 @@ const Subject = () => {
       }
 
       if (!referralData) {
-        console.log('Нет pending реферала для этого пользователя');
         return;
       }
 
@@ -205,7 +202,6 @@ const Subject = () => {
         if (updateError) {
           console.error('Ошибка обновления реферала:', updateError);
         } else {
-          console.log('✅ Реферал обновлен на completed!');
 
           // 4. Можно также начислить баллы рефереру
           try {
@@ -214,7 +210,6 @@ const Subject = () => {
               points_to_add: 10
             });
           } catch (pointsError) {
-            console.log('Не удалось начислить баллы:', pointsError);
           }
         }
       }
@@ -226,7 +221,6 @@ const Subject = () => {
   useEffect(() => {
     // Проверяем, завершен ли весь курс
     if (progress.completedCount === progress.totalLessons && progress.totalLessons > 0) {
-      console.log('🎉 Курс завершен! Проверяем реферал...');
       if (authUser?.id) {
         checkAndUpdateReferralStatus(authUser.id);
       }
@@ -236,7 +230,6 @@ const Subject = () => {
   const handleLessonComplete = async (lessonId) => {
     // Проверяем локально
     if (progress.completedLessons.includes(lessonId)) {
-      console.log('✅ Урок уже завершен (локальная проверка)');
       return;
     }
 
@@ -254,7 +247,6 @@ const Subject = () => {
             .maybeSingle();
 
           if (existingProgress?.completed) {
-            console.log('✅ Урок уже завершен в базе данных');
             // Не показываем анимацию повторно
             shouldUpdateLocalState = true; // Но обновляем локальное состояние
           } else {

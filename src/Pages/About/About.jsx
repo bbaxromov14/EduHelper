@@ -19,7 +19,6 @@ const About = () => {
       try {
         setLoading(true);
 
-        console.log("Загружаю статистику...");
 
         // 1. Получаем общее количество пользователей из таблицы 'profiles' (правильная таблица)
         const { count: totalUsers, error: usersError } = await supabase
@@ -54,7 +53,6 @@ const About = () => {
             activeUsersCount = activeCount;
           }
         } catch (err) {
-          console.log("Не удалось получить активных пользователей:", err);
           // Используем 10% от общего числа как активных
           if (totalUsers) {
             activeUsersCount = Math.max(1, Math.floor(totalUsers * 0.1));
@@ -111,7 +109,6 @@ const About = () => {
           activeUsers: activeUsersCount || Math.max(1, Math.floor(userCount * 0.1))
         }));
 
-        console.log("Статистика загружена:", {
           userCount: totalUsers,
           totalLessons,
           totalCourses,

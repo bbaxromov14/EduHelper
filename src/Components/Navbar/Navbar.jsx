@@ -213,6 +213,13 @@ const Navbar = () => {
                             {item.title}
                         </NavLink>
                     ))}
+                    <NavLink
+                        to="/forum"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
+                    >
+                        Forum
+                    </NavLink>
                 </div>
 
                 {/* Правая часть */}
@@ -324,12 +331,7 @@ const Navbar = () => {
                         ))}
 
 
-                        <NavLink
-                            to="/forum"
-                            className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
-                        >
-                            Forum
-                        </NavLink>
+
                         <NavLink
                             to="/forum"
                             onClick={() => setMobileMenuOpen(false)}

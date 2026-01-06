@@ -56,7 +56,6 @@ const CourseManage = () => {
         return;
       }
 
-      console.log('Загрузка курса с ID:', courseId, 'Тип:', typeof courseId);
 
       const { data: courseData, error: courseError } = await supabase
         .from('courses')
@@ -83,7 +82,6 @@ const CourseManage = () => {
         return;
       }
 
-      console.log('Курс загружен:', courseData);
       setCourse(courseData);
 
       const { data: lessonsData, error: lessonsError } = await supabase
@@ -97,7 +95,6 @@ const CourseManage = () => {
         alert('Ошибка загрузки уроков: ' + lessonsError.message);
         setLessons([]);
       } else {
-        console.log('Уроки загружены:', lessonsData?.length || 0);
         setLessons(lessonsData || []);
       }
 
@@ -146,7 +143,7 @@ const CourseManage = () => {
           const fileName = `${Date.now()}_${newLesson.videoFile.name.replace(/\s+/g, '_')}`;
           const filePath = `videos/${courseId}/temp/${fileName}`;
 
-          console.log('Начинаю загрузку видео:', fileName);
+          ('Начинаю загрузку видео:', fileName);
 
           const { error: uploadError } = await supabase.storage
             .from('videos')
@@ -165,7 +162,6 @@ const CourseManage = () => {
           duration = await getVideoDuration(newLesson.videoFile);
           hasVideo = true;
           
-          console.log('Видео загружено успешно:', publicUrl);
         } catch (videoError) {
           console.error('Ошибка загрузки видео:', videoError);
           alert('Ошибка загрузки видео: ' + videoError.message);
@@ -191,10 +187,8 @@ const CourseManage = () => {
         throw lessonError;
       }
 
-      console.log('Урок создан:', lesson);
 
       const newLessonCount = (course?.lesson_count || 0) + 1;
-      console.log('Обновляю количество уроков на:', newLessonCount);
 
       const { error: updateError } = await supabase
         .from('courses')
@@ -207,7 +201,6 @@ const CourseManage = () => {
       if (updateError) {
         console.error('Ошибка обновления счётчика уроков:', updateError);
       } else {
-        console.log('Счётчик уроков обновлён');
       }
 
       setNewLesson({ title: '', description: '', videoFile: null });
@@ -282,7 +275,6 @@ const CourseManage = () => {
     }
 
     try {
-      console.log('Удаляю урок:', lessonId);
 
       const { error: deleteError } = await supabase
         .from('lessons')
@@ -291,7 +283,6 @@ const CourseManage = () => {
 
       if (deleteError) throw deleteError;
 
-      console.log('Урок удалён, обновляю счётчик');
 
       const newLessonCount = Math.max(0, (course?.lesson_count || 0) - 1);
       
@@ -306,7 +297,6 @@ const CourseManage = () => {
       if (updateError) {
         console.error('Ошибка обновления счётчика уроков:', updateError);
       } else {
-        console.log('Счётчик уроков обновлён на:', newLessonCount);
       }
 
       setCourse(prev => prev ? { ...prev, lesson_count: newLessonCount } : null);
