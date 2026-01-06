@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = 'https://uuppgfdgcrzewxfjpxkc.supabase.co'
 const supabaseAnonKey = 'sb_publishable_AGCtOWD0jWK0gEeShEqQBA_jtfWs5Ps'
 
+// Основной клиент с Realtime поддержкой
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
@@ -16,7 +17,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
+// ==================== ФУНКЦИИ ДЛЯ ФОРУМА ====================
+
 export const forumApi = {
+  // Получить сообщения форума
   getForumMessages: async () => {
     try {
       const { data, error } = await supabase
@@ -27,14 +31,6 @@ export const forumApi = {
             full_name,
             avatar_url,
             username
-          ),
-          message_reactions (
-            id,
-            user_id,
-            reaction_type,
-            profiles:user_id (
-              full_name
-            )
           )
         `)
         .order('created_at', { ascending: true })
@@ -48,113 +44,19 @@ export const forumApi = {
     }
   },
 
-  addReaction: async (messageId, userId, reactionType) => {
+  // Отправить сообщение
+  sendMessage: async (content, userId, imageUrl = null) => {
     try {
-      const { data: existingReaction } = await supabase
-        .from('message_reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .eq('reaction_type', reactionType)
-        .single()
-
-      if (existingReaction) {
-        const { error } = await supabase
-          .from('message_reactions')
-          .delete()
-          .eq('id', existingReaction.id)
-        
-        if (error) throw error
-        return { deleted: true, reactionId: existingReaction.id }
-      }
-
-      const { data: oldReaction } = await supabase
-        .from('message_reactions')
-        .select('id')
-        .eq('message_id', messageId)
-        .eq('user_id', userId)
-        .single()
-
-      if (oldReaction) {
-        await supabase
-          .from('message_reactions')
-          .delete()
-          .eq('id', oldReaction.id)
-      }
-
-      const { data, error } = await supabase
-        .from('message_reactions')
-        .insert({
-          message_id: messageId,
-          user_id: userId,
-          reaction_type: reactionType,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single()
-      
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Ошибка добавления реакции:', error)
-      throw error
-    }
-  },
-
-  removeReaction: async (reactionId) => {
-    try {
-      const { error } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('id', reactionId)
-      
-      if (error) throw error
-    } catch (error) {
-      console.error('Ошибка удаления реакции:', error)
-      throw error
-    }
-  },
-
-  deleteMessage: async (messageId) => {
-    try {
-      const { error: reactionsError } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-      
-      if (reactionsError) throw reactionsError
-
-      const { error } = await supabase
-        .from('forum_messages')
-        .delete()
-        .eq('id', messageId)
-      
-      if (error) throw error
-    } catch (error) {
-      console.error('Ошибка удаления сообщения:', error)
-      throw error
-    }
-  },
-
-  sendMessage: async (content, userId, imageUrl = null, replyToId = null) => {
-    try {
-      const messageData = {
-        content,
-        user_id: userId,
-        type: imageUrl ? 'image' : 'text',
-        created_at: new Date().toISOString()
-      }
-
-      if (imageUrl) {
-        messageData.image_url = imageUrl
-      }
-      if (replyToId) {
-        messageData.reply_to_id = replyToId
-      }
-
       const { data, error } = await supabase
         .from('forum_messages')
-        .insert([messageData])
+        .insert([
+          {
+            content,
+            user_id: userId,
+            image_url: imageUrl,
+            type: imageUrl ? 'image' : 'text'
+          }
+        ])
         .select(`
           *,
           profiles:user_id (
@@ -173,6 +75,7 @@ export const forumApi = {
     }
   },
 
+  // Обновить онлайн статус
   updateOnlineStatus: async (userId, isOnline = true) => {
     try {
       const { data, error } = await supabase
@@ -191,6 +94,7 @@ export const forumApi = {
     }
   },
 
+  // Получить онлайн пользователей
   getOnlineUsers: async () => {
     try {
       const { data, error } = await supabase
@@ -263,7 +167,7 @@ export const videoStorage = {
   }
 }
 
-// ==================== АУТЕНТИФИКАЦИЯ ====================
+// ==================== АУТЕНТИФИКАЦИЯ (ваши существующие функции) ====================
 
 // Регистрация с email/password
 export const signUpWithEmail = async (email, password, fullName) => {
@@ -415,7 +319,7 @@ export const createUserProfile = async (userId, email, fullName) => {
   }
 }
 
-// ==================== ОСТАЛЬНЫЕ ФУНКЦИИ ====================
+// ==================== ОСТАЛЬНЫЕ ФУНКЦИИ (ваши существующие) ====================
 
 // ФУНКЦИИ ДЛЯ КУРСОВ
 export const courseApi = {
@@ -612,7 +516,7 @@ export const checkSupabaseConnection = async () => {
   }
 }
 
-// Проверка лимита устройств
+// Дополнительно к вашим функциям:
 export const checkDeviceLimit = async (deviceId) => {
   const { data, error } = await supabase
     .from('device_tracking')
