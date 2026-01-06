@@ -45,7 +45,7 @@ export const forumApi = {
   },
 
   // Отправить сообщение
-  sendMessage: async (content, userId, imageUrl = null, replyTo = null) => {
+  sendMessage: async (content, userId, imageUrl = null) => {
     try {
       const { data, error } = await supabase
         .from('forum_messages')
@@ -54,10 +54,9 @@ export const forumApi = {
             content,
             user_id: userId,
             image_url: imageUrl,
-            reply_to: replyTo,
             type: imageUrl ? 'image' : 'text'
           }
-        ])        
+        ])
         .select(`
           *,
           profiles:user_id (
