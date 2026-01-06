@@ -9,6 +9,7 @@ import {
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { NavLink } from 'react-router-dom';
 
 const ForumPage = () => {
     const [messages, setMessages] = useState([]);
@@ -476,7 +477,7 @@ const ForumPage = () => {
                         <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-800"></div>
                     </div>
                     <div>
-                        <h1 className="font-semibold text-white">EdduHelper Форуми</h1>
+                        <h1 className="font-semibold text-white">EdduHelper Forum</h1>
                         <p className="text-xs text-gray-400">
                             {onlineUsers.length} фойдаланувчи онлайн
                         </p>
@@ -493,6 +494,9 @@ const ForumPage = () => {
                     <button className="p-2 rounded-full hover:bg-gray-700">
                         <MoreVertical className="w-5 h-5 text-gray-300" />
                     </button>
+                    <NavLink to={"/"} className={"btn btn-error text-gray-300 hover:bg-gray-700"} >
+                            Forumdan chiqish
+                    </NavLink>
                 </div>
             </div>
 
