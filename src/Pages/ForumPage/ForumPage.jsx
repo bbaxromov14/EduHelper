@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
 import { 
   Send, User, Clock, MoreVertical, Search, Volume2, Users,
-  Paperclip, Smile, ThumbsUp, Heart, Laugh, Sad, Angry, 
+  Paperclip, Smile, ThumbsUp, Heart, Laugh, Frown, Angry, 
   Reply, Edit, Delete, CheckCheck, X
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
@@ -576,7 +576,7 @@ const ForumPage = () => {
                                     { type: 'like', icon: ThumbsUp, color: '#3b82f6' },
                                     { type: 'heart', icon: Heart, color: '#ef4444' },
                                     { type: 'laugh', icon: Laugh, color: '#f59e0b' },
-                                    { type: 'sad', icon: Sad, color: '#8b5cf6' },
+                                    { type: 'sad', icon: Frown, color: '#8b5cf6' }
                                     { type: 'angry', icon: Angry, color: '#dc2626' }
                                 ].map(({ type, icon: Icon, color }) => (
                                     <button
