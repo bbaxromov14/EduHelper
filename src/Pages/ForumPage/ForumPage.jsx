@@ -4,7 +4,8 @@ import {
     Send, User, Clock, AlertCircle, Image as ImageIcon,
     Smile, MoreVertical, Search, Pin, Volume2, Users,
     Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
-    Check, CheckCheck, MoreHorizontal, LogOut
+    Check, CheckCheck, MoreHorizontal, LogOut, Heart,
+    X, MessageCircle, Eye
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -26,6 +27,9 @@ const ForumPage = () => {
     const [selectedMessage, setSelectedMessage] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showOnlineUsers, setShowOnlineUsers] = useState(false);
+    const [replyTo, setReplyTo] = useState(null);
+    const [editingMessage, setEditingMessage] = useState(null);
+    const [messageReactions, setMessageReactions] = useState({});
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -70,12 +74,39 @@ const ForumPage = () => {
                             full_name,
                             avatar_url,
                             username
+                        ),
+                        replies:forum_messages!parent_id (
+                            id,
+                            content,
+                            created_at,
+                            profiles:user_id (
+                                full_name,
+                                avatar_url
+                            )
+                        ),
+                        reactions:message_reactions (
+                            id,
+                            reaction,
+                            user_id,
+                            profiles:user_id (
+                                full_name,
+                                avatar_url
+                            )
                         )
                     `)
+                    .is('parent_id', null)
                     .order('created_at', { ascending: false })
                     .limit(50);
 
                 if (error) throw error;
+                
+                // Формируем объект реакций
+                const reactionsObj = {};
+                data.forEach(msg => {
+                    reactionsObj[msg.id] = msg.reactions || [];
+                });
+                setMessageReactions(reactionsObj);
+                
                 setMessages(data.reverse());
                 fetchOnlineUsers();
             } catch (err) {
@@ -104,29 +135,124 @@ const ForumPage = () => {
                 },
                 async (payload) => {
                     try {
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('full_name, avatar_url, username')
-                            .eq('id', payload.new.user_id)
+                        // Загружаем полные данные нового сообщения
+                        const { data: message } = await supabase
+                            .from('forum_messages')
+                            .select(`
+                                *,
+                                profiles:user_id (
+                                    full_name,
+                                    avatar_url,
+                                    username
+                                ),
+                                replies:forum_messages!parent_id (
+                                    id,
+                                    content,
+                                    created_at,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                ),
+                                reactions:message_reactions (
+                                    id,
+                                    reaction,
+                                    user_id,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                )
+                            `)
+                            .eq('id', payload.new.id)
                             .single();
 
-                        setMessages(prev => [...prev, {
-                            ...payload.new,
-                            profiles: profile || {
-                                full_name: 'Пользователь',
-                                avatar_url: null,
-                                username: null
+                        if (message) {
+                            // Если это ответ на существующее сообщение
+                            if (message.parent_id) {
+                                setMessages(prev => prev.map(msg => {
+                                    if (msg.id === message.parent_id) {
+                                        return {
+                                            ...msg,
+                                            replies: [...(msg.replies || []), message]
+                                        };
+                                    }
+                                    return msg;
+                                }));
+                            } else {
+                                // Если это новое основное сообщение
+                                setMessages(prev => [...prev, message]);
+                                setMessageReactions(prev => ({
+                                    ...prev,
+                                    [message.id]: message.reactions || []
+                                }));
                             }
-                        }]);
 
-                        if (isScrolledToBottom) {
-                            setTimeout(() => {
-                                scrollToBottom();
-                            }, 50);
+                            if (isScrolledToBottom) {
+                                setTimeout(() => {
+                                    scrollToBottom();
+                                }, 50);
+                            }
                         }
                     } catch (error) {
                         console.error('Ошибка обработки сообщения:', error);
                     }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'message_reactions'
+                },
+                async (payload) => {
+                    try {
+                        const { data: reaction } = await supabase
+                            .from('message_reactions')
+                            .select(`
+                                *,
+                                profiles:user_id (
+                                    full_name,
+                                    avatar_url
+                                )
+                            `)
+                            .eq('id', payload.new.id)
+                            .single();
+
+                        if (reaction) {
+                            setMessageReactions(prev => ({
+                                ...prev,
+                                [reaction.message_id]: [
+                                    ...(prev[reaction.message_id] || []),
+                                    reaction
+                                ]
+                            }));
+                        }
+                    } catch (error) {
+                        console.error('Ошибка обработки реакции:', error);
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'message_reactions'
+                },
+                (payload) => {
+                    setMessageReactions(prev => {
+                        const messageId = payload.old.message_id;
+                        const existingReactions = prev[messageId] || [];
+                        const newReactions = existingReactions.filter(
+                            r => r.id !== payload.old.id
+                        );
+                        return {
+                            ...prev,
+                            [messageId]: newReactions
+                        };
+                    });
                 }
             )
             .subscribe();
@@ -187,8 +313,27 @@ const ForumPage = () => {
                         full_name,
                         avatar_url,
                         username
+                    ),
+                    replies:forum_messages!parent_id (
+                        id,
+                        content,
+                        created_at,
+                        profiles:user_id (
+                            full_name,
+                            avatar_url
+                        )
+                    ),
+                    reactions:message_reactions (
+                        id,
+                        reaction,
+                        user_id,
+                        profiles:user_id (
+                            full_name,
+                            avatar_url
+                        )
                     )
                 `)
+                .is('parent_id', null)
                 .lt('created_at', firstMessage.created_at)
                 .order('created_at', { ascending: false })
                 .limit(30);
@@ -232,16 +377,90 @@ const ForumPage = () => {
                 imageUrl = selectedImage;
             }
 
-            await forumApi.sendMessage(newMessage, user.id, imageUrl);
+            if (editingMessage) {
+                // Редактирование сообщения
+                await forumApi.updateMessage(editingMessage.id, newMessage, imageUrl);
+                setEditingMessage(null);
+            } else {
+                // Отправка нового сообщения
+                await forumApi.sendMessage(
+                    newMessage, 
+                    user.id, 
+                    imageUrl, 
+                    replyTo?.id
+                );
+            }
 
             setNewMessage('');
             setSelectedImage(null);
             setShowEmojiPicker(false);
+            setReplyTo(null);
             scrollToBottom();
         } catch (err) {
             console.error('Ошибка отправки:', err);
             setError('Хабарни жўнатишда хатолик');
         }
+    };
+
+    const handleReaction = async (messageId, reaction) => {
+        if (!user) return;
+
+        try {
+            // Проверяем, есть ли уже такая реакция от пользователя
+            const existingReactions = messageReactions[messageId] || [];
+            const userReaction = existingReactions.find(r => r.user_id === user.id);
+
+            if (userReaction) {
+                if (userReaction.reaction === reaction) {
+                    // Удаляем реакцию
+                    await forumApi.removeReaction(userReaction.id);
+                } else {
+                    // Изменяем реакцию
+                    await forumApi.updateReaction(userReaction.id, reaction);
+                }
+            } else {
+                // Добавляем новую реакцию
+                await forumApi.addReaction(messageId, user.id, reaction);
+            }
+        } catch (err) {
+            console.error('Ошибка реакции:', err);
+        }
+    };
+
+    const deleteMessage = async (messageId) => {
+        if (!window.confirm('Хабарни ўчиришни хоҳлайсизми?')) return;
+
+        try {
+            await forumApi.deleteMessage(messageId);
+            setMessages(prev => prev.filter(msg => msg.id !== messageId));
+        } catch (err) {
+            console.error('Ошибка удаления:', err);
+            setError('Хабарни ўчиришда хатолик');
+        }
+    };
+
+    const startReply = (message) => {
+        setReplyTo(message);
+        inputRef.current?.focus();
+    };
+
+    const cancelReply = () => {
+        setReplyTo(null);
+    };
+
+    const startEdit = (message) => {
+        setEditingMessage(message);
+        setNewMessage(message.content);
+        if (message.image_url) {
+            setSelectedImage(message.image_url);
+        }
+        inputRef.current?.focus();
+    };
+
+    const cancelEdit = () => {
+        setEditingMessage(null);
+        setNewMessage('');
+        setSelectedImage(null);
     };
 
     const dataURLtoFile = (dataurl, filename) => {
@@ -333,7 +552,6 @@ const ForumPage = () => {
             return 'Kecha';
         }
 
-        // Своя функция форматирования
         const day = messageDate.getDate();
         const monthIndex = messageDate.getMonth();
         const year = messageDate.getFullYear();
@@ -369,6 +587,22 @@ const ForumPage = () => {
 
     const MessageItem = ({ message, isOwn }) => {
         const [showActions, setShowActions] = useState(false);
+        const [showReactions, setShowReactions] = useState(false);
+
+        const reactions = messageReactions[message.id] || [];
+
+        // Группируем реакции по типу
+        const groupedReactions = reactions.reduce((acc, reaction) => {
+            if (!acc[reaction.reaction]) {
+                acc[reaction.reaction] = {
+                    count: 0,
+                    users: []
+                };
+            }
+            acc[reaction.reaction].count++;
+            acc[reaction.reaction].users.push(reaction.profiles);
+            return acc;
+        }, {});
 
         return (
             <div
@@ -407,6 +641,14 @@ const ForumPage = () => {
                     )}
 
                     <div className="relative">
+                        {replyTo?.id === message.id && (
+                            <div className="mb-1 ml-2 p-1 bg-blue-500/10 rounded-lg border-l-2 border-blue-500">
+                                <p className="text-xs text-gray-600 dark:text-gray-300 truncate">
+                                    {replyTo.content?.substring(0, 50)}...
+                                </p>
+                            </div>
+                        )}
+
                         <div className={`rounded-xl md:rounded-2xl px-2 md:px-4 py-1.5 md:py-2 ${isOwn
                             ? 'bg-blue-500 text-white rounded-br-md'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
@@ -432,6 +674,69 @@ const ForumPage = () => {
                                 </p>
                             )}
 
+                            {/* Отображение ответов */}
+                            {message.replies && message.replies.length > 0 && (
+                                <div className="mt-2 border-l-2 border-blue-300 pl-2 md:pl-3">
+                                    {message.replies.slice(0, 3).map((reply, idx) => (
+                                        <div key={reply.id} className="mb-1 last:mb-0">
+                                            <div className="flex items-start gap-1">
+                                                <div className="w-4 h-4 rounded-full overflow-hidden flex-shrink-0 mt-0.5">
+                                                    {reply.profiles?.avatar_url ? (
+                                                        <img
+                                                            src={reply.profiles.avatar_url}
+                                                            alt={reply.profiles.full_name}
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-gray-300 flex items-center justify-center">
+                                                            <User className="w-2 h-2 text-gray-600" />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
+                                                        {reply.profiles?.full_name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-700 dark:text-gray-300">
+                                                        {reply.content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {message.replies.length > 3 && (
+                                        <button
+                                            onClick={() => setSelectedMessage(message)}
+                                            className="text-xs text-blue-500 hover:text-blue-600 mt-1"
+                                        >
+                                            + {message.replies.length - 3} та жавоб
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Реакции */}
+                            {Object.keys(groupedReactions).length > 0 && (
+                                <div className="mt-1.5 flex items-center gap-1">
+                                    {Object.entries(groupedReactions).map(([reaction, data]) => (
+                                        <button
+                                            key={reaction}
+                                            onClick={() => handleReaction(message.id, reaction)}
+                                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${reactions.find(r => r.user_id === user?.id && r.reaction === reaction)
+                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
+                                                } hover:bg-gray-200 dark:hover:bg-gray-600`}
+                                            onMouseEnter={() => setShowReactions(true)}
+                                            onMouseLeave={() => setShowReactions(false)}
+                                            title={`${data.users.map(u => u.full_name).join(', ')}`}
+                                        >
+                                            <span>{reaction}</span>
+                                            <span>{data.count}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+
                             <div className={`flex items-center justify-end gap-1 mt-0.5 md:mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
                                 <span className="text-[10px] md:text-xs">
                                     {formatMessageTime(message.created_at)}
@@ -447,15 +752,57 @@ const ForumPage = () => {
                                 ? '-left-10 md:-left-14 flex-row-reverse'
                                 : '-right-10 md:-right-14'
                                 }`}>
-                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <button
+                                    onClick={() => startReply(message)}
+                                    className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                                    title="Жавоб бериш"
+                                >
                                     <Reply className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
-                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
-                                </button>
-                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <MoreHorizontal className="w-3 h-3 md:w-4 md:h-4" />
-                                </button>
+                                <div className="relative">
+                                    <button
+                                        onClick={() => handleReaction(message.id, '👍')}
+                                        className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                                        title="Реакция қўшиш"
+                                    >
+                                        <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
+                                    </button>
+                                    {/* Попап с выбором реакции */}
+                                    <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 hidden group-hover:block">
+                                        <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-full p-1 shadow-lg">
+                                            {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                                <button
+                                                    key={emoji}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleReaction(message.id, emoji);
+                                                    }}
+                                                    className="p-1 hover:scale-110 transition-transform text-lg"
+                                                >
+                                                    {emoji}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                                {isOwn && (
+                                    <>
+                                        <button
+                                            onClick={() => startEdit(message)}
+                                            className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                                            title="Таҳрирлаш"
+                                        >
+                                            <Edit className="w-3 h-3 md:w-4 md:h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => deleteMessage(message.id)}
+                                            className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-red-500"
+                                            title="Ўчириш"
+                                        >
+                                            <Delete className="w-3 h-3 md:w-4 md:h-4" />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         )}
                     </div>
@@ -519,7 +866,6 @@ const ForumPage = () => {
                         className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 text-gray-300"
                         title="Forumdan chiqish"
                     >
-                        {/* На мобильных только иконка, на десктопе текст с иконкой */}
                         <div className="flex items-center gap-1 md:gap-2">
                             <LogOut className="w-4 h-4 md:w-5 md:h-5" />
                             <span className="hidden md:inline text-sm">Чиқиш</span>
@@ -530,11 +876,10 @@ const ForumPage = () => {
 
             {/* Основное содержимое */}
             <div className="flex flex-1 overflow-hidden">
-                {/* Боковая панель (скрыта на мобильных, открывается по кнопке) */}
+                {/* Боковая панель */}
                 {(showOnlineUsers || window.innerWidth >= 1024) && (
                     <div className={`lg:block ${showOnlineUsers ? 'absolute inset-0 z-50 bg-gray-800' : 'hidden'} lg:relative lg:w-80 lg:inset-auto`}>
                         <div className="h-full lg:border-r lg:border-gray-700 bg-gray-800 overflow-y-auto">
-                            {/* Кнопка закрытия на мобильных */}
                             {showOnlineUsers && (
                                 <div className="lg:hidden p-4 border-b border-gray-700 flex justify-between items-center">
                                     <h2 className="font-semibold text-gray-300">Онлайн фойдаланувчилар</h2>
@@ -586,12 +931,10 @@ const ForumPage = () => {
                                                             const now = new Date();
                                                             const diffInSeconds = Math.floor((now - lastSeen) / 1000);
 
-                                                            // Если пользователь был онлайн менее 60 секунд назад
                                                             if (diffInSeconds < 60) {
                                                                 return 'Online';
                                                             }
 
-                                                            // Функция для форматирования времени на узбекском
                                                             const formatUzTimeAgo = (date) => {
                                                                 const now = new Date();
                                                                 const seconds = Math.floor((now - date) / 1000);
@@ -612,7 +955,6 @@ const ForumPage = () => {
                                                                 return `${years} yil oldin`;
                                                             };
 
-                                                            // Возвращаем отформатированное время
                                                             return formatUzTimeAgo(lastSeen);
                                                         })()}
                                                     </p>
@@ -689,8 +1031,53 @@ const ForumPage = () => {
                         )}
                     </div>
 
-                    {/* Панель ввода сообщения */}
+                    {/* Панель ввода сообщения с индикатором ответа/редактирования */}
                     <div className="border-t border-gray-700 bg-gray-800">
+                        {replyTo && (
+                            <div className="px-3 md:px-4 pt-2 md:pt-3">
+                                <div className="bg-blue-500/10 border-l-2 border-blue-500 rounded-r-lg p-2 md:p-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Reply className="w-3 h-3 md:w-4 md:h-4 text-blue-500" />
+                                            <span className="text-xs md:text-sm text-blue-500 font-medium">
+                                                {replyTo.profiles?.full_name} га жавоб
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={cancelReply}
+                                            className="p-1 hover:bg-blue-500/20 rounded-full"
+                                        >
+                                            <X className="w-3 h-3 md:w-4 md:h-4 text-blue-500" />
+                                        </button>
+                                    </div>
+                                    <p className="text-xs md:text-sm text-gray-300 mt-1 truncate">
+                                        {replyTo.content}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {editingMessage && (
+                            <div className="px-3 md:px-4 pt-2 md:pt-3">
+                                <div className="bg-yellow-500/10 border-l-2 border-yellow-500 rounded-r-lg p-2 md:p-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <Edit className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" />
+                                            <span className="text-xs md:text-sm text-yellow-500 font-medium">
+                                                Хабарни таҳрирлаш
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={cancelEdit}
+                                            className="p-1 hover:bg-yellow-500/20 rounded-full"
+                                        >
+                                            <X className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {selectedImage && (
                             <div className="px-3 md:px-4 pt-2 md:pt-3">
                                 <div className="relative inline-block">
@@ -735,7 +1122,7 @@ const ForumPage = () => {
                                         type="text"
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
-                                        placeholder="Хабарингизни ёзинг..."
+                                        placeholder={replyTo ? "Жавобингизни ёзинг..." : editingMessage ? "Хабарни таҳрирлаш..." : "Хабарингизни ёзинг..."}
                                         className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 text-sm md:text-base"
                                         onFocus={() => setShowEmojiPicker(false)}
                                     />
@@ -750,13 +1137,17 @@ const ForumPage = () => {
                                     </button>
                                 </div>
 
-                                {newMessage.trim() || selectedImage ? (
+                                {(newMessage.trim() || selectedImage) ? (
                                     <button
                                         type="submit"
                                         className="p-2 md:p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
-                                        title="Жўнатиш"
+                                        title={editingMessage ? "Таҳрирлаш" : "Жўнатиш"}
                                     >
-                                        <Send className="w-4 h-4 md:w-5 md:h-5" />
+                                        {editingMessage ? (
+                                            <Check className="w-4 h-4 md:w-5 md:h-5" />
+                                        ) : (
+                                            <Send className="w-4 h-4 md:w-5 md:h-5" />
+                                        )}
                                     </button>
                                 ) : (
                                     <button

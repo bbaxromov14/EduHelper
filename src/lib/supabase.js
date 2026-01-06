@@ -31,8 +31,29 @@ export const forumApi = {
             full_name,
             avatar_url,
             username
+          ),
+          replies:forum_messages!parent_id (
+            id,
+            content,
+            created_at,
+            image_url,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          ),
+          reactions:message_reactions (
+            id,
+            reaction,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
           )
         `)
+        .is('parent_id', null)
         .order('created_at', { ascending: true })
         .limit(100)
 
@@ -44,8 +65,54 @@ export const forumApi = {
     }
   },
 
+  // Получить больше сообщений (для пагинации)
+  getMoreMessages: async (lastCreatedAt) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
+          ),
+          replies:forum_messages!parent_id (
+            id,
+            content,
+            created_at,
+            image_url,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          ),
+          reactions:message_reactions (
+            id,
+            reaction,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          )
+        `)
+        .is('parent_id', null)
+        .lt('created_at', lastCreatedAt)
+        .order('created_at', { ascending: false })
+        .limit(30)
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка загрузки истории:', error)
+      return []
+    }
+  },
+
   // Отправить сообщение
-  sendMessage: async (content, userId, imageUrl = null) => {
+  sendMessage: async (content, userId, imageUrl = null, parentId = null) => {
     try {
       const { data, error } = await supabase
         .from('forum_messages')
@@ -54,6 +121,7 @@ export const forumApi = {
             content,
             user_id: userId,
             image_url: imageUrl,
+            parent_id: parentId,
             type: imageUrl ? 'image' : 'text'
           }
         ])
@@ -63,6 +131,26 @@ export const forumApi = {
             full_name,
             avatar_url,
             username
+          ),
+          replies:forum_messages!parent_id (
+            id,
+            content,
+            created_at,
+            image_url,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          ),
+          reactions:message_reactions (
+            id,
+            reaction,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
           )
         `)
         .single()
@@ -71,6 +159,215 @@ export const forumApi = {
       return data
     } catch (error) {
       console.error('Ошибка отправки сообщения:', error)
+      throw error
+    }
+  },
+
+  // Редактировать сообщение
+  updateMessage: async (messageId, content, imageUrl = null) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .update({
+          content,
+          image_url: imageUrl,
+          edited_at: new Date().toISOString(),
+          type: imageUrl ? 'image' : 'text'
+        })
+        .eq('id', messageId)
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
+          ),
+          replies:forum_messages!parent_id (
+            id,
+            content,
+            created_at,
+            image_url,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          ),
+          reactions:message_reactions (
+            id,
+            reaction,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          )
+        `)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Ошибка редактирования сообщения:', error)
+      throw error
+    }
+  },
+
+  // Удалить сообщение
+  deleteMessage: async (messageId) => {
+    try {
+      const { error } = await supabase
+        .from('forum_messages')
+        .delete()
+        .eq('id', messageId)
+
+      if (error) throw error
+      return { success: true }
+    } catch (error) {
+      console.error('Ошибка удаления сообщения:', error)
+      throw error
+    }
+  },
+
+  // Добавить реакцию
+  addReaction: async (messageId, userId, reaction) => {
+    try {
+      const { data, error } = await supabase
+        .from('message_reactions')
+        .insert({
+          message_id: messageId,
+          user_id: userId,
+          reaction: reaction
+        })
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Ошибка добавления реакции:', error)
+      throw error
+    }
+  },
+
+  // Удалить реакцию
+  removeReaction: async (reactionId) => {
+    try {
+      const { error } = await supabase
+        .from('message_reactions')
+        .delete()
+        .eq('id', reactionId)
+
+      if (error) throw error
+      return { success: true }
+    } catch (error) {
+      console.error('Ошибка удаления реакции:', error)
+      throw error
+    }
+  },
+
+  // Обновить реакцию
+  updateReaction: async (reactionId, newReaction) => {
+    try {
+      const { data, error } = await supabase
+        .from('message_reactions')
+        .update({ 
+          reaction: newReaction,
+          created_at: new Date().toISOString()
+        })
+        .eq('id', reactionId)
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Ошибка обновления реакции:', error)
+      throw error
+    }
+  },
+
+  // Получить реакции сообщения
+  getMessageReactions: async (messageId) => {
+    try {
+      const { data, error } = await supabase
+        .from('message_reactions')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .eq('message_id', messageId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка получения реакций:', error)
+      return []
+    }
+  },
+
+  // Получить ответы на сообщение
+  getMessageReplies: async (messageId) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url
+          )
+        `)
+        .eq('parent_id', messageId)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка получения ответов:', error)
+      return []
+    }
+  },
+
+  // Загрузить изображение для форума
+  uploadForumImage: async (file, userId) => {
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${userId}/${Date.now()}.${fileExt}`
+      const filePath = `forum/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath)
+
+      return publicUrl
+    } catch (error) {
+      console.error('Ошибка загрузки изображения:', error)
       throw error
     }
   },
@@ -109,6 +406,75 @@ export const forumApi = {
     } catch (error) {
       console.error('Ошибка получения онлайн пользователей:', error)
       return []
+    }
+  },
+
+  // Поиск сообщений
+  searchMessages: async (query) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
+          )
+        `)
+        .or(`content.ilike.%${query}%,profiles.full_name.ilike.%${query}%`)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) throw error
+      return data || []
+    } catch (error) {
+      console.error('Ошибка поиска сообщений:', error)
+      return []
+    }
+  },
+
+  // Получить детали сообщения по ID
+  getMessageById: async (messageId) => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_messages')
+        .select(`
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
+          ),
+          replies:forum_messages!parent_id (
+            id,
+            content,
+            created_at,
+            image_url,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          ),
+          reactions:message_reactions (
+            id,
+            reaction,
+            user_id,
+            profiles:user_id (
+              full_name,
+              avatar_url
+            )
+          )
+        `)
+        .eq('id', messageId)
+        .single()
+
+      if (error) throw error
+      return data
+    } catch (error) {
+      console.error('Ошибка получения сообщения:', error)
+      throw error
     }
   }
 }
