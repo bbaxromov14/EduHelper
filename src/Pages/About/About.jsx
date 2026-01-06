@@ -109,11 +109,6 @@ const About = () => {
           activeUsers: activeUsersCount || Math.max(1, Math.floor(userCount * 0.1))
         }));
 
-          userCount: totalUsers,
-          totalLessons,
-          totalCourses,
-          activeUsers: activeUsersCount
-        });
 
       } catch (error) {
         console.error("Критическая ошибка загрузки статистики:", error);
