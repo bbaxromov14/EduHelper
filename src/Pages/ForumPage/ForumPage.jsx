@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
-import { 
-  Send, User, Clock, AlertCircle, Image as ImageIcon, 
-  Smile, MoreVertical, Search, Pin, Volume2, Users,
-  Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
-  Check, CheckCheck, MoreHorizontal, LogOut
+import {
+    Send, User, Clock, AlertCircle, Image as ImageIcon,
+    Smile, MoreVertical, Search, Pin, Volume2, Users,
+    Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
+    Check, CheckCheck, MoreHorizontal, LogOut
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -110,7 +110,7 @@ const ForumPage = () => {
                             .select('full_name, avatar_url, username')
                             .eq('id', payload.new.user_id)
                             .single();
-                        
+
                         setMessages(prev => [...prev, {
                             ...payload.new,
                             profiles: profile || {
@@ -119,7 +119,7 @@ const ForumPage = () => {
                                 username: null
                             }
                         }]);
-                        
+
                         if (isScrolledToBottom) {
                             setTimeout(() => {
                                 scrollToBottom();
@@ -175,11 +175,11 @@ const ForumPage = () => {
 
     const loadMoreMessages = async () => {
         if (messages.length === 0 || loadingMore) return;
-        
+
         try {
             setLoadingMore(true);
             const firstMessage = messages[0];
-            
+
             const { data, error } = await supabase
                 .from('forum_messages')
                 .select(`
@@ -193,9 +193,9 @@ const ForumPage = () => {
                 .lt('created_at', firstMessage.created_at)
                 .order('created_at', { ascending: false })
                 .limit(30);
-            
+
             if (error) throw error;
-            
+
             if (data.length > 0) {
                 const reversedData = data.reverse();
                 setMessages(prev => [...reversedData, ...prev]);
@@ -234,7 +234,7 @@ const ForumPage = () => {
             }
 
             await forumApi.sendMessage(newMessage, user.id, imageUrl);
-            
+
             setNewMessage('');
             setSelectedImage(null);
             setShowEmojiPicker(false);
@@ -252,11 +252,11 @@ const ForumPage = () => {
             const bstr = atob(arr[1]);
             let n = bstr.length;
             const u8arr = new Uint8Array(n);
-            
-            while(n--) {
+
+            while (n--) {
                 u8arr[n] = bstr.charCodeAt(n);
             }
-            
+
             resolve(new File([u8arr], filename, { type: mime }));
         });
     };
@@ -307,17 +307,17 @@ const ForumPage = () => {
     const formatDateHeader = (date) => {
         const messageDate = new Date(date);
         const today = new Date();
-        
+
         if (messageDate.toDateString() === today.toDateString()) {
             return 'Бугун';
         }
-        
+
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         if (messageDate.toDateString() === yesterday.toDateString()) {
             return 'Кеча';
         }
-        
+
         return format(messageDate, 'd MMMM yyyy', { locale: ru });
     };
 
@@ -328,7 +328,7 @@ const ForumPage = () => {
 
         messages.forEach((message, index) => {
             const messageDate = formatDateHeader(message.created_at);
-            
+
             if (messageDate !== currentDate) {
                 if (currentGroup.length > 0) {
                     groups.push({ date: currentDate, messages: currentGroup });
@@ -338,7 +338,7 @@ const ForumPage = () => {
             } else {
                 currentGroup.push(message);
             }
-            
+
             if (index === messages.length - 1) {
                 groups.push({ date: currentDate, messages: currentGroup });
             }
@@ -351,7 +351,7 @@ const ForumPage = () => {
         const [showActions, setShowActions] = useState(false);
 
         return (
-            <div 
+            <div
                 className={`group relative flex ${isOwn ? 'justify-end' : 'justify-start'} px-2 md:px-4 py-1 hover:bg-black/5 dark:hover:bg-white/5`}
                 onMouseEnter={() => setShowActions(true)}
                 onMouseLeave={() => setShowActions(false)}
@@ -387,10 +387,10 @@ const ForumPage = () => {
                     )}
 
                     <div className="relative">
-                        <div className={`rounded-xl md:rounded-2xl px-2 md:px-4 py-1.5 md:py-2 ${isOwn 
-                            ? 'bg-blue-500 text-white rounded-br-md' 
+                        <div className={`rounded-xl md:rounded-2xl px-2 md:px-4 py-1.5 md:py-2 ${isOwn
+                            ? 'bg-blue-500 text-white rounded-br-md'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
-                        }`}>
+                            }`}>
                             {message.image_url && (
                                 <div className="mb-1 md:mb-2 -mx-1 md:-mx-2">
                                     <img
@@ -399,7 +399,7 @@ const ForumPage = () => {
                                         className="rounded-lg max-w-full max-h-64 md:max-h-96 object-contain"
                                         onError={(e) => {
                                             e.target.style.display = 'none';
-                                            e.target.parentElement.innerHTML = 
+                                            e.target.parentElement.innerHTML =
                                                 '<div class="p-2 md:p-4 bg-gray-200 dark:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400 text-xs md:text-sm">Расм юкланмади</div>';
                                         }}
                                     />
@@ -423,10 +423,10 @@ const ForumPage = () => {
                         </div>
 
                         {showActions && (
-                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-0.5 md:gap-1 ${isOwn 
-                                ? '-left-10 md:-left-14 flex-row-reverse' 
+                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-0.5 md:gap-1 ${isOwn
+                                ? '-left-10 md:-left-14 flex-row-reverse'
                                 : '-right-10 md:-right-14'
-                            }`}>
+                                }`}>
                                 <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <Reply className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
@@ -457,7 +457,7 @@ const ForumPage = () => {
             {/* Шапка */}
             <div className="bg-gray-800 border-b border-gray-700 px-3 md:px-4 py-2 md:py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 md:gap-3">
-                    <button 
+                    <button
                         onClick={() => setShowOnlineUsers(!showOnlineUsers)}
                         className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 lg:hidden"
                     >
@@ -494,8 +494,8 @@ const ForumPage = () => {
                     <button className="p-1.5 md:p-2 rounded-full hover:bg-gray-700">
                         <Volume2 className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
                     </button>
-                    <NavLink 
-                        to={"/"} 
+                    <NavLink
+                        to={"/"}
                         className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 text-gray-300"
                         title="Forumdan chiqish"
                     >
@@ -518,7 +518,7 @@ const ForumPage = () => {
                             {showOnlineUsers && (
                                 <div className="lg:hidden p-4 border-b border-gray-700 flex justify-between items-center">
                                     <h2 className="font-semibold text-gray-300">Онлайн фойдаланувчилар</h2>
-                                    <button 
+                                    <button
                                         onClick={() => setShowOnlineUsers(false)}
                                         className="p-2 rounded-full hover:bg-gray-700"
                                     >
@@ -526,7 +526,7 @@ const ForumPage = () => {
                                     </button>
                                 </div>
                             )}
-                            
+
                             <div className="p-3 md:p-4">
                                 <div className="mb-4 md:mb-6">
                                     <div className="flex items-center justify-between mb-2 md:mb-3">
@@ -561,10 +561,40 @@ const ForumPage = () => {
                                                         {onlineUser.id === user?.id && ' (Сиз)'}
                                                     </p>
                                                     <p className="text-[10px] md:text-xs text-gray-400">
-                                                        {formatDistanceToNow(new Date(onlineUser.last_seen), { 
-                                                            locale: ru,
-                                                            addSuffix: true 
-                                                        })}
+                                                        {(() => {
+                                                            const lastSeen = new Date(onlineUser.last_seen);
+                                                            const now = new Date();
+                                                            const diffInSeconds = Math.floor((now - lastSeen) / 1000);
+
+                                                            // Если пользователь был онлайн менее 60 секунд назад
+                                                            if (diffInSeconds < 60) {
+                                                                return 'Online';
+                                                            }
+
+                                                            // Функция для форматирования времени на узбекском
+                                                            const formatUzTimeAgo = (date) => {
+                                                                const now = new Date();
+                                                                const seconds = Math.floor((now - date) / 1000);
+
+                                                                const minutes = Math.floor(seconds / 60);
+                                                                if (minutes < 60) return `${minutes} daqiqa oldin`;
+
+                                                                const hours = Math.floor(minutes / 60);
+                                                                if (hours < 24) return `${hours} soat oldin`;
+
+                                                                const days = Math.floor(hours / 24);
+                                                                if (days < 30) return `${days} kun oldin`;
+
+                                                                const months = Math.floor(days / 30);
+                                                                if (months < 12) return `${months} oy oldin`;
+
+                                                                const years = Math.floor(months / 12);
+                                                                return `${years} yil oldin`;
+                                                            };
+
+                                                            // Возвращаем отформатированное время
+                                                            return formatUzTimeAgo(lastSeen);
+                                                        })()}
                                                     </p>
                                                 </div>
                                             </div>
@@ -593,7 +623,7 @@ const ForumPage = () => {
                 {/* Область сообщений */}
                 <div className={`flex-1 flex flex-col ${showOnlineUsers ? 'hidden lg:flex' : 'flex'}`}>
                     {/* Сообщения */}
-                    <div 
+                    <div
                         ref={messagesContainerRef}
                         className="flex-1 overflow-y-auto bg-gray-900"
                         style={{
@@ -689,7 +719,7 @@ const ForumPage = () => {
                                         className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 text-sm md:text-base"
                                         onFocus={() => setShowEmojiPicker(false)}
                                     />
-                                    
+
                                     <button
                                         type="button"
                                         onClick={() => setShowEmojiPicker(!showEmojiPicker)}
