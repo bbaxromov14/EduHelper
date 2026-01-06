@@ -5,7 +5,7 @@ import {
     Smile, MoreVertical, Search, Pin, Volume2, Users,
     Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
     Check, CheckCheck, MoreHorizontal, LogOut, Heart,
-    X, MessageCircle, Eye
+    X, MessageCircle, Eye, RefreshCw
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -30,6 +30,7 @@ const ForumPage = () => {
     const [replyTo, setReplyTo] = useState(null);
     const [editingMessage, setEditingMessage] = useState(null);
     const [messageReactions, setMessageReactions] = useState({});
+    const [retryCount, setRetryCount] = useState(0);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -39,24 +40,46 @@ const ForumPage = () => {
     // Получаем текущего пользователя и его профиль
     useEffect(() => {
         const getUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            setUser(user);
+            try {
+                const { data: { user }, error: userError } = await supabase.auth.getUser();
+                
+                if (userError) {
+                    console.error('Ошибка получения пользователя:', userError);
+                    return;
+                }
+                
+                setUser(user);
 
-            if (user) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('*')
-                    .eq('id', user.id)
-                    .single();
-                setUserProfile(profile);
-                await forumApi.updateOnlineStatus(user.id, true);
+                if (user) {
+                    const { data: profile, error: profileError } = await supabase
+                        .from('profiles')
+                        .select('*')
+                        .eq('id', user.id)
+                        .single();
+                    
+                    if (profileError) {
+                        console.error('Ошибка получения профиля:', profileError);
+                    } else {
+                        setUserProfile(profile);
+                    }
+                    
+                    try {
+                        await forumApi.updateOnlineStatus(user.id, true);
+                    } catch (statusError) {
+                        console.error('Ошибка обновления статуса:', statusError);
+                    }
+                }
+            } catch (err) {
+                console.error('Ошибка в getUser:', err);
             }
         };
         getUser();
 
         return () => {
             if (user) {
-                forumApi.updateOnlineStatus(user.id, false);
+                forumApi.updateOnlineStatus(user.id, false).catch(err => {
+                    console.error('Ошибка обновления статуса при выходе:', err);
+                });
             }
         };
     }, []);
@@ -66,7 +89,10 @@ const ForumPage = () => {
         const initChat = async () => {
             try {
                 setLoading(true);
-                const { data, error } = await supabase
+                setError(null);
+                
+                // Сначала получаем сообщения без реакций и ответов
+                const { data, error: fetchError } = await supabase
                     .from('forum_messages')
                     .select(`
                         *,
@@ -74,44 +100,88 @@ const ForumPage = () => {
                             full_name,
                             avatar_url,
                             username
-                        ),
-                        replies:forum_messages!parent_id (
-                            id,
-                            content,
-                            created_at,
-                            profiles:user_id (
-                                full_name,
-                                avatar_url
-                            )
-                        ),
-                        reactions:message_reactions (
-                            id,
-                            reaction,
-                            user_id,
-                            profiles:user_id (
-                                full_name,
-                                avatar_url
-                            )
                         )
                     `)
                     .is('parent_id', null)
-                    .order('created_at', { ascending: false })
+                    .order('created_at', { ascending: true })
                     .limit(50);
 
-                if (error) throw error;
+                if (fetchError) {
+                    console.error('Ошибка запроса сообщений:', fetchError);
+                    throw fetchError;
+                }
+
+                // Затем для каждого сообщения загружаем реакции и ответы отдельно
+                const messagesWithDetails = await Promise.all(
+                    (data || []).map(async (msg) => {
+                        try {
+                            // Загружаем реакции
+                            const { data: reactions } = await supabase
+                                .from('message_reactions')
+                                .select(`
+                                    *,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                `)
+                                .eq('message_id', msg.id);
+
+                            // Загружаем ответы
+                            const { data: replies } = await supabase
+                                .from('forum_messages')
+                                .select(`
+                                    *,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                `)
+                                .eq('parent_id', msg.id)
+                                .order('created_at', { ascending: true });
+
+                            return {
+                                ...msg,
+                                reactions: reactions || [],
+                                replies: replies || []
+                            };
+                        } catch (err) {
+                            console.error(`Ошибка загрузки деталей для сообщения ${msg.id}:`, err);
+                            return {
+                                ...msg,
+                                reactions: [],
+                                replies: []
+                            };
+                        }
+                    })
+                );
+
+                setMessages(messagesWithDetails);
                 
                 // Формируем объект реакций
                 const reactionsObj = {};
-                data.forEach(msg => {
+                messagesWithDetails.forEach(msg => {
                     reactionsObj[msg.id] = msg.reactions || [];
                 });
                 setMessageReactions(reactionsObj);
+
+                // Загружаем онлайн пользователей
+                try {
+                    await fetchOnlineUsers();
+                } catch (onlineError) {
+                    console.error('Ошибка загрузки онлайн пользователей:', onlineError);
+                }
                 
-                setMessages(data.reverse());
-                fetchOnlineUsers();
             } catch (err) {
                 console.error('Ошибка загрузки сообщений:', err);
-                setError(err.message);
+                setError('Хабарларни юклаб бўлмади. Илтимос, қайта урунинг.');
+                
+                // Автоматическая повторная попытка через 3 секунды (максимум 3 попытки)
+                if (retryCount < 3) {
+                    setTimeout(() => {
+                        setRetryCount(prev => prev + 1);
+                    }, 3000);
+                }
             } finally {
                 setLoading(false);
                 setTimeout(() => {
@@ -119,163 +189,162 @@ const ForumPage = () => {
                 }, 100);
             }
         };
+        
         initChat();
-    }, []);
+    }, [retryCount]);
 
     // Real-time подписка
     useEffect(() => {
-        const messagesChannel = supabase
-            .channel('forum-messages-telegram')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'forum_messages'
-                },
-                async (payload) => {
-                    try {
-                        // Загружаем полные данные нового сообщения
-                        const { data: message } = await supabase
-                            .from('forum_messages')
-                            .select(`
-                                *,
-                                profiles:user_id (
-                                    full_name,
-                                    avatar_url,
-                                    username
-                                ),
-                                replies:forum_messages!parent_id (
-                                    id,
-                                    content,
-                                    created_at,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                ),
-                                reactions:message_reactions (
-                                    id,
-                                    reaction,
-                                    user_id,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                )
-                            `)
-                            .eq('id', payload.new.id)
-                            .single();
+        let messagesChannel;
+        let onlineChannel;
 
-                        if (message) {
-                            // Если это ответ на существующее сообщение
-                            if (message.parent_id) {
-                                setMessages(prev => prev.map(msg => {
-                                    if (msg.id === message.parent_id) {
-                                        return {
-                                            ...msg,
-                                            replies: [...(msg.replies || []), message]
-                                        };
-                                    }
-                                    return msg;
-                                }));
-                            } else {
-                                // Если это новое основное сообщение
-                                setMessages(prev => [...prev, message]);
-                                setMessageReactions(prev => ({
+        const setupSubscriptions = async () => {
+            try {
+                // Подписка на новые сообщения
+                messagesChannel = supabase
+                    .channel('forum-messages-telegram')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'forum_messages'
+                        },
+                        async (payload) => {
+                            try {
+                                // Загружаем профиль пользователя
+                                const { data: profile } = await supabase
+                                    .from('profiles')
+                                    .select('full_name, avatar_url, username')
+                                    .eq('id', payload.new.user_id)
+                                    .single();
+
+                                const newMessage = {
+                                    ...payload.new,
+                                    profiles: profile || {
+                                        full_name: 'Пользователь',
+                                        avatar_url: null,
+                                        username: null
+                                    },
+                                    reactions: [],
+                                    replies: []
+                                };
+
+                                // Если это ответ на существующее сообщение
+                                if (newMessage.parent_id) {
+                                    setMessages(prev => prev.map(msg => {
+                                        if (msg.id === newMessage.parent_id) {
+                                            return {
+                                                ...msg,
+                                                replies: [...(msg.replies || []), newMessage]
+                                            };
+                                        }
+                                        return msg;
+                                    }));
+                                } else {
+                                    // Если это новое основное сообщение
+                                    setMessages(prev => [...prev, newMessage]);
+                                }
+
+                                if (isScrolledToBottom) {
+                                    setTimeout(() => {
+                                        scrollToBottom();
+                                    }, 50);
+                                }
+                            } catch (error) {
+                                console.error('Ошибка обработки нового сообщения:', error);
+                            }
+                        }
+                    )
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'INSERT',
+                            schema: 'public',
+                            table: 'message_reactions'
+                        },
+                        async (payload) => {
+                            try {
+                                const { data: reaction } = await supabase
+                                    .from('message_reactions')
+                                    .select(`
+                                        *,
+                                        profiles:user_id (
+                                            full_name,
+                                            avatar_url
+                                        )
+                                    `)
+                                    .eq('id', payload.new.id)
+                                    .single();
+
+                                if (reaction) {
+                                    setMessageReactions(prev => ({
+                                        ...prev,
+                                        [reaction.message_id]: [
+                                            ...(prev[reaction.message_id] || []),
+                                            reaction
+                                        ]
+                                    }));
+                                }
+                            } catch (error) {
+                                console.error('Ошибка обработки реакции:', error);
+                            }
+                        }
+                    )
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'DELETE',
+                            schema: 'public',
+                            table: 'message_reactions'
+                        },
+                        (payload) => {
+                            setMessageReactions(prev => {
+                                const messageId = payload.old.message_id;
+                                const existingReactions = prev[messageId] || [];
+                                const newReactions = existingReactions.filter(
+                                    r => r.id !== payload.old.id
+                                );
+                                return {
                                     ...prev,
-                                    [message.id]: message.reactions || []
-                                }));
-                            }
-
-                            if (isScrolledToBottom) {
-                                setTimeout(() => {
-                                    scrollToBottom();
-                                }, 50);
-                            }
+                                    [messageId]: newReactions
+                                };
+                            });
                         }
-                    } catch (error) {
-                        console.error('Ошибка обработки сообщения:', error);
-                    }
-                }
-            )
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'message_reactions'
-                },
-                async (payload) => {
-                    try {
-                        const { data: reaction } = await supabase
-                            .from('message_reactions')
-                            .select(`
-                                *,
-                                profiles:user_id (
-                                    full_name,
-                                    avatar_url
-                                )
-                            `)
-                            .eq('id', payload.new.id)
-                            .single();
+                    )
+                    .subscribe();
 
-                        if (reaction) {
-                            setMessageReactions(prev => ({
-                                ...prev,
-                                [reaction.message_id]: [
-                                    ...(prev[reaction.message_id] || []),
-                                    reaction
-                                ]
-                            }));
+                // Подписка на онлайн статус
+                onlineChannel = supabase
+                    .channel('online-status-telegram')
+                    .on(
+                        'postgres_changes',
+                        {
+                            event: 'UPDATE',
+                            schema: 'public',
+                            table: 'profiles'
+                        },
+                        (payload) => {
+                            // Обновляем онлайн пользователей при любом изменении профиля
+                            fetchOnlineUsers();
                         }
-                    } catch (error) {
-                        console.error('Ошибка обработки реакции:', error);
-                    }
-                }
-            )
-            .on(
-                'postgres_changes',
-                {
-                    event: 'DELETE',
-                    schema: 'public',
-                    table: 'message_reactions'
-                },
-                (payload) => {
-                    setMessageReactions(prev => {
-                        const messageId = payload.old.message_id;
-                        const existingReactions = prev[messageId] || [];
-                        const newReactions = existingReactions.filter(
-                            r => r.id !== payload.old.id
-                        );
-                        return {
-                            ...prev,
-                            [messageId]: newReactions
-                        };
-                    });
-                }
-            )
-            .subscribe();
+                    )
+                    .subscribe();
 
-        const onlineChannel = supabase
-            .channel('online-status-telegram')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'profiles',
-                    filter: 'is_online=eq.true'
-                },
-                (payload) => {
-                    fetchOnlineUsers();
-                }
-            )
-            .subscribe();
+            } catch (error) {
+                console.error('Ошибка настройки подписок:', error);
+            }
+        };
+
+        setupSubscriptions();
 
         return () => {
-            supabase.removeChannel(messagesChannel);
-            supabase.removeChannel(onlineChannel);
+            if (messagesChannel) {
+                supabase.removeChannel(messagesChannel);
+            }
+            if (onlineChannel) {
+                supabase.removeChannel(onlineChannel);
+            }
         };
     }, [isScrolledToBottom]);
 
@@ -296,7 +365,7 @@ const ForumPage = () => {
 
         container.addEventListener('scroll', handleScroll);
         return () => container.removeEventListener('scroll', handleScroll);
-    }, [hasMoreMessages, loadingMore]);
+    }, [hasMoreMessages, loadingMore, messages]);
 
     const loadMoreMessages = async () => {
         if (messages.length === 0 || loadingMore) return;
@@ -313,24 +382,6 @@ const ForumPage = () => {
                         full_name,
                         avatar_url,
                         username
-                    ),
-                    replies:forum_messages!parent_id (
-                        id,
-                        content,
-                        created_at,
-                        profiles:user_id (
-                            full_name,
-                            avatar_url
-                        )
-                    ),
-                    reactions:message_reactions (
-                        id,
-                        reaction,
-                        user_id,
-                        profiles:user_id (
-                            full_name,
-                            avatar_url
-                        )
                     )
                 `)
                 .is('parent_id', null)
@@ -340,8 +391,50 @@ const ForumPage = () => {
 
             if (error) throw error;
 
-            if (data.length > 0) {
-                const reversedData = data.reverse();
+            if (data && data.length > 0) {
+                // Загружаем детали для новых сообщений
+                const newMessagesWithDetails = await Promise.all(
+                    data.map(async (msg) => {
+                        try {
+                            const { data: reactions } = await supabase
+                                .from('message_reactions')
+                                .select(`
+                                    *,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                `)
+                                .eq('message_id', msg.id);
+
+                            const { data: replies } = await supabase
+                                .from('forum_messages')
+                                .select(`
+                                    *,
+                                    profiles:user_id (
+                                        full_name,
+                                        avatar_url
+                                    )
+                                `)
+                                .eq('parent_id', msg.id)
+                                .order('created_at', { ascending: true });
+
+                            return {
+                                ...msg,
+                                reactions: reactions || [],
+                                replies: replies || []
+                            };
+                        } catch (err) {
+                            return {
+                                ...msg,
+                                reactions: [],
+                                replies: []
+                            };
+                        }
+                    })
+                );
+
+                const reversedData = newMessagesWithDetails.reverse();
                 setMessages(prev => [...reversedData, ...prev]);
                 setHasMoreMessages(data.length === 30);
             } else {
@@ -360,6 +453,7 @@ const ForumPage = () => {
             setOnlineUsers(users);
         } catch (err) {
             console.error('Ошибка загрузки онлайн пользователей:', err);
+            setOnlineUsers([]);
         }
     };
 
@@ -368,33 +462,33 @@ const ForumPage = () => {
         if (!newMessage.trim() && !selectedImage) return;
 
         try {
+            setError(null);
             let imageUrl = null;
 
             if (selectedImage && typeof selectedImage !== 'string') {
-                const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
-                imageUrl = await forumApi.uploadForumImage(file, user.id);
+                try {
+                    const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
+                    imageUrl = await forumApi.uploadForumImage(file, user.id);
+                } catch (uploadError) {
+                    console.error('Ошибка загрузки изображения:', uploadError);
+                    setError('Расмни юклаб бўлмади');
+                    return;
+                }
             } else if (selectedImage) {
                 imageUrl = selectedImage;
             }
 
             if (editingMessage) {
-                // Редактирование сообщения
                 await forumApi.updateMessage(editingMessage.id, newMessage, imageUrl);
                 setEditingMessage(null);
             } else {
-                // Отправка нового сообщения
-                await forumApi.sendMessage(
-                    newMessage, 
-                    user.id, 
-                    imageUrl, 
-                    replyTo?.id
-                );
+                await forumApi.sendMessage(newMessage, user.id, imageUrl, replyTo?.id);
+                setReplyTo(null);
             }
 
             setNewMessage('');
             setSelectedImage(null);
             setShowEmojiPicker(false);
-            setReplyTo(null);
             scrollToBottom();
         } catch (err) {
             console.error('Ошибка отправки:', err);
@@ -406,20 +500,16 @@ const ForumPage = () => {
         if (!user) return;
 
         try {
-            // Проверяем, есть ли уже такая реакция от пользователя
             const existingReactions = messageReactions[messageId] || [];
             const userReaction = existingReactions.find(r => r.user_id === user.id);
 
             if (userReaction) {
                 if (userReaction.reaction === reaction) {
-                    // Удаляем реакцию
                     await forumApi.removeReaction(userReaction.id);
                 } else {
-                    // Изменяем реакцию
                     await forumApi.updateReaction(userReaction.id, reaction);
                 }
             } else {
-                // Добавляем новую реакцию
                 await forumApi.addReaction(messageId, user.id, reaction);
             }
         } catch (err) {
@@ -450,7 +540,7 @@ const ForumPage = () => {
 
     const startEdit = (message) => {
         setEditingMessage(message);
-        setNewMessage(message.content);
+        setNewMessage(message.content || '');
         if (message.image_url) {
             setSelectedImage(message.image_url);
         }
@@ -480,7 +570,9 @@ const ForumPage = () => {
     };
 
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
         setIsScrolledToBottom(true);
     };
 
@@ -519,7 +611,17 @@ const ForumPage = () => {
     };
 
     const formatMessageTime = (date) => {
-        return format(new Date(date), 'HH:mm');
+        try {
+            return format(new Date(date), 'HH:mm');
+        } catch {
+            return '--:--';
+        }
+    };
+
+    const retryLoadMessages = () => {
+        setRetryCount(prev => prev + 1);
+        setError(null);
+        setLoading(true);
     };
 
     const uzLocale = {
@@ -539,24 +641,28 @@ const ForumPage = () => {
     };
 
     const formatDateHeader = (date) => {
-        const messageDate = new Date(date);
-        const today = new Date();
+        try {
+            const messageDate = new Date(date);
+            const today = new Date();
 
-        if (messageDate.toDateString() === today.toDateString()) {
-            return 'Bugun';
+            if (messageDate.toDateString() === today.toDateString()) {
+                return 'Bugun';
+            }
+
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (messageDate.toDateString() === yesterday.toDateString()) {
+                return 'Kecha';
+            }
+
+            const day = messageDate.getDate();
+            const monthIndex = messageDate.getMonth();
+            const year = messageDate.getFullYear();
+
+            return `${day} ${uzLocale.months[monthIndex]} ${year}`;
+        } catch {
+            return 'Мальум бўлмаган сана';
         }
-
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        if (messageDate.toDateString() === yesterday.toDateString()) {
-            return 'Kecha';
-        }
-
-        const day = messageDate.getDate();
-        const monthIndex = messageDate.getMonth();
-        const year = messageDate.getFullYear();
-
-        return `${day} ${uzLocale.months[monthIndex]} ${year}`;
     };
 
     const groupMessagesByDate = () => {
@@ -591,7 +697,6 @@ const ForumPage = () => {
 
         const reactions = messageReactions[message.id] || [];
 
-        // Группируем реакции по типу
         const groupedReactions = reactions.reduce((acc, reaction) => {
             if (!acc[reaction.reaction]) {
                 acc[reaction.reaction] = {
@@ -616,8 +721,16 @@ const ForumPage = () => {
                             {message.profiles?.avatar_url ? (
                                 <img
                                     src={message.profiles.avatar_url}
-                                    alt={message.profiles.full_name}
+                                    alt={message.profiles.full_name || 'User'}
                                     className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentElement.innerHTML = `
+                                            <div class="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                                <User class="w-3 h-3 md:w-4 md:h-4 text-white" />
+                                            </div>
+                                        `;
+                                    }}
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
@@ -678,13 +791,13 @@ const ForumPage = () => {
                             {message.replies && message.replies.length > 0 && (
                                 <div className="mt-2 border-l-2 border-blue-300 pl-2 md:pl-3">
                                     {message.replies.slice(0, 3).map((reply, idx) => (
-                                        <div key={reply.id} className="mb-1 last:mb-0">
+                                        <div key={reply.id || idx} className="mb-1 last:mb-0">
                                             <div className="flex items-start gap-1">
                                                 <div className="w-4 h-4 rounded-full overflow-hidden flex-shrink-0 mt-0.5">
                                                     {reply.profiles?.avatar_url ? (
                                                         <img
                                                             src={reply.profiles.avatar_url}
-                                                            alt={reply.profiles.full_name}
+                                                            alt={reply.profiles.full_name || 'User'}
                                                             className="w-full h-full object-cover"
                                                         />
                                                     ) : (
@@ -695,7 +808,7 @@ const ForumPage = () => {
                                                 </div>
                                                 <div>
                                                     <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-                                                        {reply.profiles?.full_name}
+                                                        {reply.profiles?.full_name || 'Номаълум'}
                                                     </p>
                                                     <p className="text-xs text-gray-700 dark:text-gray-300">
                                                         {reply.content}
@@ -728,7 +841,7 @@ const ForumPage = () => {
                                                 } hover:bg-gray-200 dark:hover:bg-gray-600`}
                                             onMouseEnter={() => setShowReactions(true)}
                                             onMouseLeave={() => setShowReactions(false)}
-                                            title={`${data.users.map(u => u.full_name).join(', ')}`}
+                                            title={`${data.users.map(u => u?.full_name || 'Пользователь').join(', ')}`}
                                         >
                                             <span>{reaction}</span>
                                             <span>{data.count}</span>
@@ -741,6 +854,9 @@ const ForumPage = () => {
                                 <span className="text-[10px] md:text-xs">
                                     {formatMessageTime(message.created_at)}
                                 </span>
+                                {isOwn && message.edited_at && (
+                                    <span className="text-[8px] md:text-[10px] italic">(таҳрирланган)</span>
+                                )}
                                 {isOwn && (
                                     <CheckCheck className="w-2.5 h-2.5 md:w-3 md:h-3" />
                                 )}
@@ -767,23 +883,6 @@ const ForumPage = () => {
                                     >
                                         <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
                                     </button>
-                                    {/* Попап с выбором реакции */}
-                                    <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 hidden group-hover:block">
-                                        <div className="flex gap-1 bg-white dark:bg-gray-800 rounded-full p-1 shadow-lg">
-                                            {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
-                                                <button
-                                                    key={emoji}
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleReaction(message.id, emoji);
-                                                    }}
-                                                    className="p-1 hover:scale-110 transition-transform text-lg"
-                                                >
-                                                    {emoji}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
                                 </div>
                                 {isOwn && (
                                     <>
@@ -837,6 +936,14 @@ const ForumPage = () => {
                                     src={onlineUsers[0].avatar_url}
                                     alt="Группа"
                                     className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentElement.innerHTML = `
+                                            <div class="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
+                                                <Users class="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                            </div>
+                                        `;
+                                    }}
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
@@ -909,8 +1016,16 @@ const ForumPage = () => {
                                                         {onlineUser.avatar_url ? (
                                                             <img
                                                                 src={onlineUser.avatar_url}
-                                                                alt={onlineUser.full_name}
+                                                                alt={onlineUser.full_name || 'User'}
                                                                 className="w-full h-full object-cover"
+                                                                onError={(e) => {
+                                                                    e.target.style.display = 'none';
+                                                                    e.target.parentElement.innerHTML = `
+                                                                        <div class="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                                                            <User class="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                                                        </div>
+                                                                    `;
+                                                                }}
                                                             />
                                                         ) : (
                                                             <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
@@ -922,40 +1037,44 @@ const ForumPage = () => {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-xs md:text-sm font-medium text-white truncate">
-                                                        {onlineUser.full_name || onlineUser.email?.split('@')[0]}
+                                                        {onlineUser.full_name || onlineUser.email?.split('@')[0] || 'Пользователь'}
                                                         {onlineUser.id === user?.id && ' (Сиз)'}
                                                     </p>
                                                     <p className="text-[10px] md:text-xs text-gray-400">
                                                         {(() => {
-                                                            const lastSeen = new Date(onlineUser.last_seen);
-                                                            const now = new Date();
-                                                            const diffInSeconds = Math.floor((now - lastSeen) / 1000);
+                                                            try {
+                                                                const lastSeen = new Date(onlineUser.last_seen);
+                                                                const now = new Date();
+                                                                const diffInSeconds = Math.floor((now - lastSeen) / 1000);
 
-                                                            if (diffInSeconds < 60) {
+                                                                if (diffInSeconds < 60) {
+                                                                    return 'Online';
+                                                                }
+
+                                                                const formatUzTimeAgo = (date) => {
+                                                                    const now = new Date();
+                                                                    const seconds = Math.floor((now - date) / 1000);
+
+                                                                    const minutes = Math.floor(seconds / 60);
+                                                                    if (minutes < 60) return `${minutes} daqiqa oldin`;
+
+                                                                    const hours = Math.floor(minutes / 60);
+                                                                    if (hours < 24) return `${hours} soat oldin`;
+
+                                                                    const days = Math.floor(hours / 24);
+                                                                    if (days < 30) return `${days} kun oldin`;
+
+                                                                    const months = Math.floor(days / 30);
+                                                                    if (months < 12) return `${months} oy oldin`;
+
+                                                                    const years = Math.floor(months / 12);
+                                                                    return `${years} yil oldin`;
+                                                                };
+
+                                                                return formatUzTimeAgo(lastSeen);
+                                                            } catch {
                                                                 return 'Online';
                                                             }
-
-                                                            const formatUzTimeAgo = (date) => {
-                                                                const now = new Date();
-                                                                const seconds = Math.floor((now - date) / 1000);
-
-                                                                const minutes = Math.floor(seconds / 60);
-                                                                if (minutes < 60) return `${minutes} daqiqa oldin`;
-
-                                                                const hours = Math.floor(minutes / 60);
-                                                                if (hours < 24) return `${hours} soat oldin`;
-
-                                                                const days = Math.floor(hours / 24);
-                                                                if (days < 30) return `${days} kun oldin`;
-
-                                                                const months = Math.floor(days / 30);
-                                                                if (months < 12) return `${months} oy oldin`;
-
-                                                                const years = Math.floor(months / 12);
-                                                                return `${years} yil oldin`;
-                                                            };
-
-                                                            return formatUzTimeAgo(lastSeen);
                                                         })()}
                                                     </p>
                                                 </div>
@@ -992,9 +1111,23 @@ const ForumPage = () => {
                             backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`
                         }}
                     >
-                        {loading ? (
-                            <div className="flex justify-center items-center h-full">
-                                <div className="animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 border-blue-500"></div>
+                        {error ? (
+                            <div className="flex flex-col items-center justify-center h-full p-4">
+                                <AlertCircle className="w-12 h-12 md:w-16 md:h-16 mb-4 text-red-500" />
+                                <p className="text-base md:text-xl text-gray-300 text-center mb-2">{error}</p>
+                                <p className="text-sm text-gray-400 text-center mb-6">Илтимос, қайта урунинг</p>
+                                <button
+                                    onClick={retryLoadMessages}
+                                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                                >
+                                    <RefreshCw className="w-4 h-4" />
+                                    Қайта уруниш
+                                </button>
+                            </div>
+                        ) : loading ? (
+                            <div className="flex flex-col items-center justify-center h-full">
+                                <div className="animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 border-blue-500 mb-4"></div>
+                                <p className="text-gray-400">Хабарлар юкланмоқда...</p>
                             </div>
                         ) : messages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-full text-gray-500 p-4">
@@ -1033,6 +1166,17 @@ const ForumPage = () => {
 
                     {/* Панель ввода сообщения с индикатором ответа/редактирования */}
                     <div className="border-t border-gray-700 bg-gray-800">
+                        {error && !loading && (
+                            <div className="px-3 md:px-4 pt-2">
+                                <div className="bg-red-500/10 border-l-2 border-red-500 rounded-r-lg p-2 md:p-3">
+                                    <div className="flex items-center gap-2">
+                                        <AlertCircle className="w-4 h-4 text-red-500" />
+                                        <p className="text-xs md:text-sm text-red-400">{error}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {replyTo && (
                             <div className="px-3 md:px-4 pt-2 md:pt-3">
                                 <div className="bg-blue-500/10 border-l-2 border-blue-500 rounded-r-lg p-2 md:p-3">
