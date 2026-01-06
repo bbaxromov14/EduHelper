@@ -20,181 +20,98 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // ==================== ФУНКЦИИ ДЛЯ ФОРУМА ====================
 
 export const forumApi = {
-  // Отправить сообщение (текст, изображение, ответ на другое сообщение)
-  sendMessage: async (content, userId, imageUrl = null, replyToId = null) => {
+  // Получить сообщения форума
+  getForumMessages: async () => {
     try {
-      const messageData = {
-        user_id: userId,
-        content: content?.trim() || null,
-        image_url: imageUrl || null,
-        reply_to_id: replyToId || null,
-      };
-
-      // Удаляем пустые поля (Supabase не любит null в некоторых случаях)
-      if (!messageData.content) delete messageData.content;
-      if (!messageData.image_url) delete messageData.image_url;
-      if (!messageData.reply_to_id) delete messageData.reply_to_id;
-
       const { data, error } = await supabase
         .from('forum_messages')
-        .insert([messageData])
         .select(`
           *,
-          profiles:user_id (full_name, avatar_url, username),
-          reply_to:reply_to_id (
-            id, content, image_url,
-            profiles:user_id (full_name, username)
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
           )
         `)
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(100)
 
-      if (error) throw error;
-      return data;
+      if (error) throw error
+      return data || []
     } catch (error) {
-      console.error('Ошибка отправки сообщения:', error);
-      throw error;
+      console.error('Ошибка загрузки сообщений:', error)
+      return []
     }
   },
 
-  // Добавить реакцию (лайк, сердце и т.д.)
-  addReaction: async (messageId, userId, reactionType) => {
+  // Отправить сообщение
+  sendMessage: async (content, userId, imageUrl = null) => {
     try {
-      // upsert — если реакция уже есть, обновит; если нет — создаст
       const { data, error } = await supabase
-        .from('message_reactions')
-        .upsert(
+        .from('forum_messages')
+        .insert([
           {
-            message_id: messageId,
+            content,
             user_id: userId,
-            reaction_type: reactionType,
-          },
-          { onConflict: 'message_id,user_id' } // уникальный ключ: один пользователь — одна реакция на сообщение
-        )
+            image_url: imageUrl,
+            type: imageUrl ? 'image' : 'text'
+          }
+        ])
         .select(`
-          id, message_id, user_id, reaction_type,
-          profiles:user_id (full_name)
+          *,
+          profiles:user_id (
+            full_name,
+            avatar_url,
+            username
+          )
         `)
-        .single();
+        .single()
 
-      if (error) throw error;
-      return data;
+      if (error) throw error
+      return data
     } catch (error) {
-      console.error('Ошибка добавления реакции:', error);
-      throw error;
+      console.error('Ошибка отправки сообщения:', error)
+      throw error
     }
   },
 
-  // Удалить реакцию пользователя с сообщения
-  removeReaction: async (messageId, userId) => {
-    try {
-      const { error } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', messageId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Ошибка удаления реакции:', error);
-      throw error;
-    }
-  },
-
-  // Удалить своё сообщение (рекомендуется проверять на сервере через RLS!)
-  deleteMessage: async (messageId, userId) => {
-    try {
-      // Дополнительная проверка на клиенте (основная защита — RLS на сервере)
-      const { data: message, error: fetchError } = await supabase
-        .from('forum_messages')
-        .select('user_id')
-        .eq('id', messageId)
-        .single();
-
-      if (fetchError || message.user_id !== userId) {
-        throw new Error('Вы можете удалять только свои сообщения');
-      }
-
-      const { error } = await supabase
-        .from('forum_messages')
-        .delete()
-        .eq('id', messageId);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      console.error('Ошибка удаления сообщения:', error);
-      throw error;
-    }
-  },
-
-  // Обновить статус онлайн / оффлайн
+  // Обновить онлайн статус
   updateOnlineStatus: async (userId, isOnline = true) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .update({
           is_online: isOnline,
-          last_seen: new Date().toISOString(),
+          last_seen: new Date().toISOString()
         })
         .eq('id', userId)
-        .select('id, full_name, avatar_url, is_online, last_seen')
-        .single();
+        .select()
 
-      if (error) throw error;
-      return data;
+      if (error) throw error
+      return data[0]
     } catch (error) {
-      console.error('Ошибка обновления онлайн-статуса:', error);
-      throw error;
+      console.error('Ошибка обновления статуса:', error)
     }
   },
 
-  // Получить список онлайн-пользователей
+  // Получить онлайн пользователей
   getOnlineUsers: async () => {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, username, avatar_url, is_online, last_seen')
+        .select('id, full_name, email, avatar_url, is_online, last_seen')
         .eq('is_online', true)
         .order('last_seen', { ascending: false })
-        .limit(50);
+        .limit(20)
 
-      if (error) throw error;
-      return data || [];
+      if (error) throw error
+      return data || []
     } catch (error) {
-      console.error('Ошибка получения онлайн-пользователей:', error);
-      return [];
+      console.error('Ошибка получения онлайн пользователей:', error)
+      return []
     }
-  },
-
-  // Загрузка изображения в форум (отдельная функция в videoStorage у вас уже есть)
-  // Но для удобства можно дублировать здесь или использовать videoStorage.uploadForumImage
-  uploadForumImage: async (file, userId) => {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-      const filePath = `forum/${userId}/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('forum-images')
-        .upload(filePath, file, {
-          cacheControl: '86400',
-          upsert: false,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('forum-images')
-        .getPublicUrl(filePath);
-
-      return publicUrl;
-    } catch (error) {
-      console.error('Ошибка загрузки изображения:', error);
-      throw error;
-    }
-  },
-};
+  }
+}
 
 // ==================== ФУНКЦИИ ДЛЯ ВИДЕО И ИЗОБРАЖЕНИЙ ====================
 

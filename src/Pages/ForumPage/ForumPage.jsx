@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
-import {
-    Send, User, Users, Clock, MoreVertical, Paperclip, Smile,
-    ThumbsUp, Heart, Laugh, Frown, Angry,
-    Reply, Trash2, CheckCheck, X
+import { 
+  Send, User, Clock, AlertCircle, Image as ImageIcon, 
+  Smile, MoreVertical, Search, Pin, Volume2, Users,
+  Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
+  Check, CheckCheck, MoreHorizontal
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -13,6 +14,7 @@ const ForumPage = () => {
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
     const [user, setUser] = useState(null);
     const [userProfile, setUserProfile] = useState(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -21,19 +23,20 @@ const ForumPage = () => {
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
-    const [replyingTo, setReplyingTo] = useState(null);
-    const [showReactionsPicker, setShowReactionsPicker] = useState(null);
+    const [selectedMessage, setSelectedMessage] = useState(null);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
     const messagesContainerRef = useRef(null);
     const inputRef = useRef(null);
 
-    // Получение текущего пользователя
+    // Получаем текущего пользователя и его профиль
     useEffect(() => {
         const getUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
             setUser(user);
+
             if (user) {
                 const { data: profile } = await supabase
                     .from('profiles')
@@ -47,11 +50,13 @@ const ForumPage = () => {
         getUser();
 
         return () => {
-            if (user) forumApi.updateOnlineStatus(user.id, false);
+            if (user) {
+                forumApi.updateOnlineStatus(user.id, false);
+            }
         };
     }, []);
 
-    // Загрузка начальных сообщений
+    // Инициализация чата
     useEffect(() => {
         const initChat = async () => {
             try {
@@ -59,17 +64,13 @@ const ForumPage = () => {
                 const { data, error } = await supabase
                     .from('forum_messages')
                     .select(`
-  *,
-  profiles:user_id (full_name, avatar_url, username),
-  message_reactions!message_id (
-    id, user_id, reaction_type,
-    profiles:user_id (full_name)
-  ),
-  reply_to:reply_to_id!reply_to_id (
-    id, content, image_url,
-    profiles:user_id (full_name, username)
-  )
-`)
+                        *,
+                        profiles:user_id (
+                            full_name,
+                            avatar_url,
+                            username
+                        )
+                    `)
                     .order('created_at', { ascending: false })
                     .limit(50);
 
@@ -78,56 +79,71 @@ const ForumPage = () => {
                 fetchOnlineUsers();
             } catch (err) {
                 console.error('Ошибка загрузки сообщений:', err);
+                setError(err.message);
             } finally {
                 setLoading(false);
-                setTimeout(scrollToBottom, 100);
+                setTimeout(() => {
+                    scrollToBottom();
+                }, 100);
             }
         };
         initChat();
     }, []);
 
-    // Real-time подписки
+    // Real-time подписка
     useEffect(() => {
         const messagesChannel = supabase
-            .channel('forum-messages')
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'forum_messages' }, async (payload) => {
-                const newMsg = payload.new;
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name, avatar_url, username')
-                    .eq('id', newMsg.user_id)
-                    .single();
-
-                setMessages(prev => [...prev, {
-                    ...newMsg,
-                    profiles: profile || { full_name: 'Пользователь', avatar_url: null, username: null },
-                    message_reactions: [],
-                    reply_to: null
-                }]);
-
-                if (isScrolledToBottom) scrollToBottom();
-            })
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reactions' }, (payload) => {
-                setMessages(prev => prev.map(msg =>
-                    msg.id === payload.new.message_id
-                        ? { ...msg, message_reactions: [...(msg.message_reactions || []), payload.new] }
-                        : msg
-                ));
-            })
-            .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'message_reactions' }, (payload) => {
-                setMessages(prev => prev.map(msg =>
-                    msg.id === payload.old.message_id
-                        ? { ...msg, message_reactions: (msg.message_reactions || []).filter(r => r.id !== payload.old.id) }
-                        : msg
-                ));
-            })
+            .channel('forum-messages-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'forum_messages'
+                },
+                async (payload) => {
+                    try {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('full_name, avatar_url, username')
+                            .eq('id', payload.new.user_id)
+                            .single();
+                        
+                        setMessages(prev => [...prev, {
+                            ...payload.new,
+                            profiles: profile || {
+                                full_name: 'Пользователь',
+                                avatar_url: null,
+                                username: null
+                            }
+                        }]);
+                        
+                        if (isScrolledToBottom) {
+                            setTimeout(() => {
+                                scrollToBottom();
+                            }, 50);
+                        }
+                    } catch (error) {
+                        console.error('Ошибка обработки сообщения:', error);
+                    }
+                }
+            )
             .subscribe();
 
         const onlineChannel = supabase
-            .channel('online-status')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: 'is_online=eq.true' }, () => {
-                fetchOnlineUsers();
-            })
+            .channel('online-status-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'profiles',
+                    filter: 'is_online=eq.true'
+                },
+                (payload) => {
+                    fetchOnlineUsers();
+                }
+            )
             .subscribe();
 
         return () => {
@@ -136,7 +152,7 @@ const ForumPage = () => {
         };
     }, [isScrolledToBottom]);
 
-    // Скролл и подгрузка старых сообщений
+    // Обработка скролла
     useEffect(() => {
         const container = messagesContainerRef.current;
         if (!container) return;
@@ -146,6 +162,7 @@ const ForumPage = () => {
             const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 100;
             setIsScrolledToBottom(isBottom);
 
+            // Автоматическая загрузка истории при скролле вверх
             if (scrollTop < 100 && hasMoreMessages && !loadingMore) {
                 loadMoreMessages();
             }
@@ -157,31 +174,36 @@ const ForumPage = () => {
 
     const loadMoreMessages = async () => {
         if (messages.length === 0 || loadingMore) return;
+        
         try {
             setLoadingMore(true);
             const firstMessage = messages[0];
+            
             const { data, error } = await supabase
                 .from('forum_messages')
                 .select(`
-                *,
-                profiles:user_id (full_name, avatar_url, username),
-                message_reactions!message_id (*),
-                reply_to:reply_to_id!reply_to_id (id, content, image_url, profiles:user_id (full_name, username))
-              `)
+                    *,
+                    profiles:user_id (
+                        full_name,
+                        avatar_url,
+                        username
+                    )
+                `)
                 .lt('created_at', firstMessage.created_at)
                 .order('created_at', { ascending: false })
                 .limit(30);
-
+            
             if (error) throw error;
+            
             if (data.length > 0) {
-                const reversed = data.reverse();
-                setMessages(prev => [...reversed, ...prev]);
+                const reversedData = data.reverse();
+                setMessages(prev => [...reversedData, ...prev]);
                 setHasMoreMessages(data.length === 30);
             } else {
                 setHasMoreMessages(false);
             }
         } catch (err) {
-            console.error('Ошибка подгрузки:', err);
+            console.error('Ошибка загрузки истории:', err);
         } finally {
             setLoadingMore(false);
         }
@@ -192,13 +214,8 @@ const ForumPage = () => {
             const users = await forumApi.getOnlineUsers();
             setOnlineUsers(users);
         } catch (err) {
-            console.error('Ошибка онлайн:', err);
+            console.error('Ошибка загрузки онлайн пользователей:', err);
         }
-    };
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-        setIsScrolledToBottom(true);
     };
 
     const sendMessage = async (e) => {
@@ -207,6 +224,7 @@ const ForumPage = () => {
 
         try {
             let imageUrl = null;
+
             if (selectedImage && typeof selectedImage !== 'string') {
                 const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
                 imageUrl = await forumApi.uploadForumImage(file, user.id);
@@ -214,42 +232,15 @@ const ForumPage = () => {
                 imageUrl = selectedImage;
             }
 
-            const replyToId = replyingTo ? replyingTo.id : null;
-            await forumApi.sendMessage(newMessage.trim(), user.id, imageUrl, replyToId);
-
+            await forumApi.sendMessage(newMessage, user.id, imageUrl);
+            
             setNewMessage('');
             setSelectedImage(null);
-            setReplyingTo(null);
             setShowEmojiPicker(false);
             scrollToBottom();
         } catch (err) {
             console.error('Ошибка отправки:', err);
-            alert('Хабар жўнатишда хатолик');
-        }
-    };
-
-    const addReaction = async (messageId, type) => {
-        try {
-            await forumApi.addReaction(messageId, user.id, type);
-        } catch (err) {
-            console.error('Реакция ошибка:', err);
-        }
-    };
-
-    const removeReaction = async (messageId) => {
-        try {
-            await forumApi.removeReaction(messageId, user.id);
-        } catch (err) {
-            console.error('Удаление реакции:', err);
-        }
-    };
-
-    const deleteMessage = async (messageId) => {
-        if (!confirm('Хабарни ўчиришни хоҳлайсизми?')) return;
-        try {
-            await forumApi.deleteMessage(messageId, user.id);
-        } catch (err) {
-            console.error('Удаление сообщения:', err);
+            setError('Хабарни жўнатишда хатолик');
         }
     };
 
@@ -260,27 +251,46 @@ const ForumPage = () => {
             const bstr = atob(arr[1]);
             let n = bstr.length;
             const u8arr = new Uint8Array(n);
-            while (n--) u8arr[n] = bstr.charCodeAt(n);
+            
+            while(n--) {
+                u8arr[n] = bstr.charCodeAt(n);
+            }
+            
             resolve(new File([u8arr], filename, { type: mime }));
         });
     };
 
-    const handleImageUpload = (e) => {
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        setIsScrolledToBottom(true);
+    };
+
+    const handleImageUpload = async (e) => {
         const file = e.target.files[0];
-        if (!file) return;
+        if (!file || !user) return;
 
-        if (!file.type.startsWith('image/')) {
-            alert('Фақат расм танланг');
-            return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-            alert('Расм ҳажми 5MB дан ошмаслиги керак');
-            return;
-        }
+        try {
+            if (!file.type.startsWith('image/')) {
+                setError('Илтимос, расм танланг');
+                return;
+            }
 
-        const reader = new FileReader();
-        reader.onloadend = () => setSelectedImage(reader.result);
-        reader.readAsDataURL(file);
+            if (file.size > 5 * 1024 * 1024) {
+                setError('Расм жуда катта. Максимал хажми: 5MB');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setSelectedImage(reader.result);
+                inputRef.current?.focus();
+            };
+            reader.readAsDataURL(file);
+
+        } catch (err) {
+            console.error('Файл юклашда хатолик:', err);
+            setError('Расмни юклаб бўлмади');
+        }
     };
 
     const handleEmojiClick = (emojiData) => {
@@ -289,15 +299,25 @@ const ForumPage = () => {
         inputRef.current?.focus();
     };
 
-    const formatMessageTime = (date) => format(new Date(date), 'HH:mm');
+    const formatMessageTime = (date) => {
+        return format(new Date(date), 'HH:mm');
+    };
+
     const formatDateHeader = (date) => {
-        const d = new Date(date);
+        const messageDate = new Date(date);
         const today = new Date();
-        if (d.toDateString() === today.toDateString()) return 'Бугун';
+        
+        if (messageDate.toDateString() === today.toDateString()) {
+            return 'Бугун';
+        }
+        
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        if (d.toDateString() === yesterday.toDateString()) return 'Кеча';
-        return format(d, 'd MMMM yyyy', { locale: ru });
+        if (messageDate.toDateString() === yesterday.toDateString()) {
+            return 'Кеча';
+        }
+        
+        return format(messageDate, 'd MMMM yyyy', { locale: ru });
     };
 
     const groupMessagesByDate = () => {
@@ -305,235 +325,391 @@ const ForumPage = () => {
         let currentDate = null;
         let currentGroup = [];
 
-        messages.forEach((msg, i) => {
-            const dateStr = formatDateHeader(msg.created_at);
-            if (dateStr !== currentDate) {
-                if (currentGroup.length > 0) groups.push({ date: currentDate, messages: currentGroup });
-                currentDate = dateStr;
-                currentGroup = [msg];
+        messages.forEach((message, index) => {
+            const messageDate = formatDateHeader(message.created_at);
+            
+            if (messageDate !== currentDate) {
+                if (currentGroup.length > 0) {
+                    groups.push({ date: currentDate, messages: currentGroup });
+                }
+                currentDate = messageDate;
+                currentGroup = [message];
             } else {
-                currentGroup.push(msg);
+                currentGroup.push(message);
             }
-            if (i === messages.length - 1) groups.push({ date: currentDate, messages: currentGroup });
+            
+            if (index === messages.length - 1) {
+                groups.push({ date: currentDate, messages: currentGroup });
+            }
         });
+
         return groups;
-    };
-
-    const ReactionButton = ({ message, type, icon: Icon, color }) => {
-        const userReaction = message.message_reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
-        const count = message.message_reactions?.filter(r => r.reaction_type === type).length || 0;
-        if (count === 0 && !userReaction) return null;
-
-        return (
-            <button
-                onClick={() => userReaction ? removeReaction(message.id) : addReaction(message.id, type)}
-                className={`px-2 py-1 rounded-full flex items-center gap-1 text-xs transition-colors ${userReaction ? 'bg-blue-500/30 text-blue-300' : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
-                    }`}
-            >
-                <Icon size={14} style={{ color }} />
-                {count > 0 && <span>{count}</span>}
-            </button>
-        );
     };
 
     const MessageItem = ({ message, isOwn }) => {
         const [showActions, setShowActions] = useState(false);
 
         return (
-            <div
-                className={`flex gap-3 my-3 ${isOwn ? 'flex-row-reverse' : ''}`}
+            <div 
+                className={`group relative flex ${isOwn ? 'justify-end' : 'justify-start'} px-4 py-1 hover:bg-black/5 dark:hover:bg-white/5`}
                 onMouseEnter={() => setShowActions(true)}
                 onMouseLeave={() => setShowActions(false)}
             >
                 {!isOwn && (
-                    <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-                        {message.profiles?.avatar_url ? (
-                            <img src={message.profiles.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="w-full h-full bg-gray-600 flex items-center justify-center">
-                                <User size={20} className="text-gray-400" />
-                            </div>
-                        )}
+                    <div className="mr-3 mt-1">
+                        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                            {message.profiles?.avatar_url ? (
+                                <img
+                                    src={message.profiles.avatar_url}
+                                    alt={message.profiles.full_name}
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                    <User className="w-4 h-4 text-white" />
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
-                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} max-w-lg`}>
-                    {message.reply_to && (
-                        <div className="bg-gray-700/50 rounded-lg p-2 mb-2 text-sm">
-                            <div className="font-medium text-gray-300">
-                                {message.reply_to.profiles?.full_name || message.reply_to.profiles?.username || 'Номаълум'}
-                            </div>
-                            <div className="text-gray-400 truncate">
-                                {message.reply_to.content || 'Расм'}
-                            </div>
+                <div className={`max-w-[70%] ${isOwn ? 'order-1' : 'order-2'}`}>
+                    {!isOwn && (
+                        <div className="flex items-center gap-2 mb-1 px-2">
+                            <span className="font-medium text-sm text-gray-700 dark:text-gray-300">
+                                {message.profiles?.full_name || message.profiles?.username || 'Номаълум'}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                                {formatMessageTime(message.created_at)}
+                            </span>
                         </div>
                     )}
 
-                    {message.image_url && (
-                        <img
-                            src={message.image_url}
-                            alt="attachment"
-                            className="max-w-sm rounded-lg mb-2"
-                            onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.parentNode.innerHTML += '<div class="text-red-400 text-sm">Расм юкланмади</div>';
-                            }}
-                        />
-                    )}
+                    <div className="relative">
+                        <div className={`rounded-2xl px-4 py-2 ${isOwn 
+                            ? 'bg-blue-500 text-white rounded-br-md' 
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
+                        }`}>
+                            {message.image_url && (
+                                <div className="mb-2 -mx-2">
+                                    <img
+                                        src={message.image_url}
+                                        alt="Илова килинган расм"
+                                        className="rounded-lg max-w-full max-h-96 object-contain"
+                                        onError={(e) => {
+                                            e.target.style.display = 'none';
+                                            e.target.parentElement.innerHTML = 
+                                                '<div class="p-4 bg-gray-200 dark:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400">Расм юкланмади</div>';
+                                        }}
+                                    />
+                                </div>
+                            )}
 
-                    {message.content && (
-                        <div className={`px-4 py-2 rounded-2xl ${isOwn ? 'bg-blue-600' : 'bg-gray-700'}`}>
-                            {message.content}
+                            {message.content && (
+                                <p className="whitespace-pre-wrap break-words">
+                                    {message.content}
+                                </p>
+                            )}
+
+                            <div className={`flex items-center justify-end gap-1 mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
+                                <span className="text-xs">
+                                    {formatMessageTime(message.created_at)}
+                                </span>
+                                {isOwn && (
+                                    <CheckCheck className="w-3 h-3" />
+                                )}
+                            </div>
                         </div>
-                    )}
-
-                    <div className="text-xs text-gray-400 mt-1 flex items-center gap-2">
-                        {formatMessageTime(message.created_at)}
-                        {isOwn && <CheckCheck size={14} className="text-blue-300" />}
-                    </div>
-
-                    <div className="flex items-center gap-1 mt-2 flex-wrap">
-                        <ReactionButton message={message} type="like" icon={ThumbsUp} color="#3b82f6" />
-                        <ReactionButton message={message} type="heart" icon={Heart} color="#ef4444" />
-                        <ReactionButton message={message} type="laugh" icon={Laugh} color="#f59e0b" />
-                        <ReactionButton message={message} type="sad" icon={Frown} color="#8b5cf6" />
-                        <ReactionButton message={message} type="angry" icon={Angry} color="#dc2626" />
 
                         {showActions && (
-                            <>
-                                <button
-                                    onClick={() => { setReplyingTo(message); inputRef.current?.focus(); }}
-                                    className="p-1.5 bg-gray-700 rounded-full hover:bg-gray-600"
-                                >
-                                    <Reply size={14} />
+                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-1 ${isOwn 
+                                ? '-left-14 flex-row-reverse' 
+                                : '-right-14'
+                            }`}>
+                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <Reply className="w-4 h-4" />
                                 </button>
-                                {isOwn && (
-                                    <button
-                                        onClick={() => deleteMessage(message.id)}
-                                        className="p-1.5 bg-red-900/50 rounded-full hover:bg-red-800/50"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
-                                )}
-                            </>
+                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <ThumbsUp className="w-4 h-4" />
+                                </button>
+                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
+
+                {isOwn && (
+                    <div className="ml-3 mt-1 order-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <MoreVertical className="w-4 h-4 text-gray-500" />
+                        </button>
+                    </div>
+                )}
             </div>
         );
     };
 
     return (
-        <div className="flex flex-col h-screen bg-gray-900 text-white">
-            {/* Шапка */}
-            <div className="border-b border-gray-800 p-4 flex items-center justify-between">
+        <div className="h-screen bg-gray-900 flex flex-col">
+            {/* Шапка как в Telegram */}
+            <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                        <Users size={28} />
+                    <button className="p-2 rounded-full hover:bg-gray-700 lg:hidden">
+                        <Users className="w-5 h-5 text-gray-300" />
+                    </button>
+                    <div className="relative">
+                        <div className="w-10 h-10 rounded-full overflow-hidden">
+                            {onlineUsers[0]?.avatar_url ? (
+                                <img
+                                    src={onlineUsers[0].avatar_url}
+                                    alt="Группа"
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
+                                    <Users className="w-5 h-5 text-white" />
+                                </div>
+                            )}
+                        </div>
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-800"></div>
                     </div>
                     <div>
-                        <h1 className="text-xl font-bold">EdduHelper Форуми</h1>
-                        <p className="text-sm text-gray-400">{onlineUsers.length} онлайн</p>
+                        <h1 className="font-semibold text-white">EdduHelper Форуми</h1>
+                        <p className="text-xs text-gray-400">
+                            {onlineUsers.length} фойдаланувчи онлайн
+                        </p>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <button className="p-2 rounded-full hover:bg-gray-700">
+                        <Search className="w-5 h-5 text-gray-300" />
+                    </button>
+                    <button className="p-2 rounded-full hover:bg-gray-700">
+                        <Volume2 className="w-5 h-5 text-gray-300" />
+                    </button>
+                    <button className="p-2 rounded-full hover:bg-gray-700">
+                        <MoreVertical className="w-5 h-5 text-gray-300" />
+                    </button>
                 </div>
             </div>
 
-            {/* Сообщения */}
-            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6">
-                {loading ? (
-                    <div className="text-center text-gray-400">Юкланмоқда...</div>
-                ) : messages.length === 0 ? (
-                    <div className="text-center text-gray-400 mt-20">
-                        <p className="text-2xl mb-4">Биринчи бўлиб ёзинг!</p>
-                        <p>Хабар ёзиб, жўнатинг</p>
-                    </div>
-                ) : (
-                    <>
-                        {loadingMore && <div className="text-center text-gray-500 py-2">Эски хабарлар юкланмоқда...</div>}
-                        {groupMessagesByDate().map((group) => (
-                            <div key={group.date} className="mb-8">
-                                <div className="text-center text-xs text-gray-500 mb-4 relative">
-                                    <span className="bg-gray-900 px-3 py-1 rounded-full">{group.date}</span>
-                                </div>
-                                {group.messages.map((msg) => (
-                                    <MessageItem key={msg.id} message={msg} isOwn={msg.user_id === user?.id} />
+            {/* Основное содержимое */}
+            <div className="flex flex-1 overflow-hidden">
+                {/* Боковая панель (скрыта на мобильных) */}
+                <div className="hidden lg:block w-80 border-r border-gray-700 bg-gray-800 overflow-y-auto">
+                    <div className="p-4">
+                        <div className="mb-6">
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-semibold text-gray-300">Ҳозир онлайн</h3>
+                                <span className="text-xs text-gray-500">{onlineUsers.length}</span>
+                            </div>
+                            <div className="space-y-2">
+                                {onlineUsers.map((onlineUser) => (
+                                    <div
+                                        key={onlineUser.id}
+                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-700"
+                                    >
+                                        <div className="relative">
+                                            <div className="w-10 h-10 rounded-full overflow-hidden">
+                                                {onlineUser.avatar_url ? (
+                                                    <img
+                                                        src={onlineUser.avatar_url}
+                                                        alt={onlineUser.full_name}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                                        <User className="w-5 h-5 text-white" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-white truncate">
+                                                {onlineUser.full_name || onlineUser.email?.split('@')[0]}
+                                                {onlineUser.id === user?.id && ' (Сиз)'}
+                                            </p>
+                                            <p className="text-xs text-gray-400">
+                                                {formatDistanceToNow(new Date(onlineUser.last_seen), { 
+                                                    locale: ru,
+                                                    addSuffix: true 
+                                                })}
+                                            </p>
+                                        </div>
+                                    </div>
                                 ))}
                             </div>
-                        ))}
-                        <div ref={messagesEndRef} />
-                    </>
-                )}
+                        </div>
+
+                        <div className="bg-gray-900/50 rounded-xl p-4">
+                            <h4 className="text-sm font-medium text-gray-300 mb-3">Статистика</h4>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="bg-gray-800 rounded-lg p-3">
+                                    <p className="text-lg font-bold text-white">{onlineUsers.length}</p>
+                                    <p className="text-xs text-gray-400">Онлайн</p>
+                                </div>
+                                <div className="bg-gray-800 rounded-lg p-3">
+                                    <p className="text-lg font-bold text-white">{messages.length}</p>
+                                    <p className="text-xs text-gray-400">Хабарлар</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Область сообщений */}
+                <div className="flex-1 flex flex-col">
+                    {/* Сообщения */}
+                    <div 
+                        ref={messagesContainerRef}
+                        className="flex-1 overflow-y-auto bg-gray-900"
+                        style={{
+                            backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`
+                        }}
+                    >
+                        {loading ? (
+                            <div className="flex justify-center items-center h-full">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                            </div>
+                        ) : messages.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                                <Send className="w-16 h-16 mb-4 opacity-50" />
+                                <p className="text-xl text-gray-400">Биринчи бўлиб ёзинг!</p>
+                                <p className="text-sm mt-2 text-gray-500">Хабар ёзиб, жўнатинг</p>
+                            </div>
+                        ) : (
+                            <>
+                                {loadingMore && (
+                                    <div className="flex justify-center py-4">
+                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                                    </div>
+                                )}
+
+                                {groupMessagesByDate().map((group, groupIndex) => (
+                                    <div key={groupIndex}>
+                                        <div className="sticky top-2 z-10 flex justify-center my-4">
+                                            <div className="bg-gray-700/90 backdrop-blur-sm text-gray-300 text-xs px-3 py-1.5 rounded-full">
+                                                {group.date}
+                                            </div>
+                                        </div>
+                                        {group.messages.map((message) => (
+                                            <MessageItem
+                                                key={message.id}
+                                                message={message}
+                                                isOwn={message.user_id === user?.id}
+                                            />
+                                        ))}
+                                    </div>
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </>
+                        )}
+                    </div>
+
+                    {/* Панель ввода сообщения (фиксированная внизу) */}
+                    <div className="border-t border-gray-700 bg-gray-800">
+                        {selectedImage && (
+                            <div className="px-4 pt-3">
+                                <div className="relative inline-block">
+                                    <img
+                                        src={selectedImage}
+                                        alt="Кўриб чиқиш"
+                                        className="rounded-lg max-h-32"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedImage(null)}
+                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        <form onSubmit={sendMessage} className="p-4 relative">
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current.click()}
+                                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                >
+                                    <Paperclip className="w-5 h-5" />
+                                </button>
+
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleImageUpload}
+                                    accept="image/*"
+                                    className="hidden"
+                                />
+
+                                <div className="flex-1 relative">
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={newMessage}
+                                        onChange={(e) => setNewMessage(e.target.value)}
+                                        placeholder="Хабарингизни ёзинг..."
+                                        className="w-full px-4 py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                        onFocus={() => setShowEmojiPicker(false)}
+                                    />
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                                    >
+                                        <Smile className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                {newMessage.trim() || selectedImage ? (
+                                    <button
+                                        type="submit"
+                                        className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
+                                    >
+                                        <Send className="w-5 h-5" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        className="p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                    >
+                                        <Mic className="w-5 h-5" />
+                                    </button>
+                                )}
+                            </div>
+
+                            {showEmojiPicker && (
+                                <div className="absolute bottom-20 left-4 z-50">
+                                    <div className="relative">
+                                        <EmojiPicker
+                                            onEmojiClick={handleEmojiClick}
+                                            previewConfig={{ showPreview: false }}
+                                            skinTonesDisabled
+                                            searchDisabled={false}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </form>
+                    </div>
+                </div>
             </div>
-
-            {/* Панель ответа */}
-            {replyingTo && (
-                <div className="mx-4 mb-2 bg-gray-800 rounded-lg p-3 flex justify-between items-center">
-                    <div className="text-sm">
-                        <span className="text-blue-400">Жавоб:</span>{' '}
-                        {replyingTo.content ? replyingTo.content.substring(0, 50) + (replyingTo.content.length > 50 ? '...' : '') : 'Расм'}
-                    </div>
-                    <button onClick={() => setReplyingTo(null)}>
-                        <X size={18} className="text-gray-400 hover:text-white" />
-                    </button>
-                </div>
-            )}
-
-            {/* Превью изображения */}
-            {selectedImage && (
-                <div className="mx-4 mb-2 relative">
-                    <img src={selectedImage} alt="preview" className="max-h-64 rounded-lg" />
-                    <button
-                        onClick={() => setSelectedImage(null)}
-                        className="absolute top-2 right-2 bg-red-600 rounded-full p-2 hover:bg-red-700"
-                    >
-                        <X size={16} />
-                    </button>
-                </div>
-            )}
-
-            {/* Поле ввода */}
-            <form onSubmit={sendMessage} className="p-4 border-t border-gray-800">
-                <div className="flex items-center gap-3 bg-gray-800 rounded-full px-4 py-3">
-                    <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white">
-                        <Paperclip size={22} />
-                    </button>
-
-                    <input
-                        ref={inputRef}
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Хабарингизни ёзинг..."
-                        className="flex-1 bg-transparent outline-none text-white placeholder-gray-500"
-                    />
-
-                    <button
-                        type="button"
-                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className="text-gray-400 hover:text-white"
-                    >
-                        <Smile size={22} />
-                    </button>
-
-                    <button type="submit" className="text-blue-400 hover:text-blue-300">
-                        <Send size={22} />
-                    </button>
-                </div>
-
-                {showEmojiPicker && (
-                    <div className="absolute bottom-20 right-4 z-10">
-                        <EmojiPicker onEmojiClick={handleEmojiClick} theme="dark" />
-                    </div>
-                )}
-            </form>
 
             {/* Кнопка прокрутки вниз */}
             {!isScrolledToBottom && (
                 <button
                     onClick={scrollToBottom}
-                    className="fixed bottom-24 right-6 bg-blue-600 rounded-full p-3 shadow-lg hover:bg-blue-700"
+                    className="fixed bottom-24 right-4 p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-colors z-50"
                 >
-                    <Send size={18} className="rotate-180" />
+                    <Send className="w-5 h-5 rotate-45" />
                 </button>
             )}
         </div>
