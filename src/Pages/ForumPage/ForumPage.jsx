@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
 import {
-  Send, User, Clock, MoreVertical, Paperclip, Smile,
-  ThumbsUp, Heart, Laugh, Sad, Angry,
-  Reply, Trash2, CheckCheck, X
-} from 'lucide-react';
+    Send, User, Clock, MoreVertical, Paperclip, Smile,
+    ThumbsUp, Heart, Laugh, Frown, Angry, 
+    Reply, Trash2, CheckCheck, X
+  } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -397,7 +397,7 @@ const ForumPage = () => {
             <ReactionButton message={message} type="like" icon={ThumbsUp} color="#3b82f6" />
             <ReactionButton message={message} type="heart" icon={Heart} color="#ef4444" />
             <ReactionButton message={message} type="laugh" icon={Laugh} color="#f59e0b" />
-            <ReactionButton message={message} type="sad" icon={Sad} color="#8b5cf6" />
+            <ReactionButton message={message} type="sad" icon={Frown} color="#8b5cf6" />
             <ReactionButton message={message} type="angry" icon={Angry} color="#dc2626" />
 
             {showActions && (
