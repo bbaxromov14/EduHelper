@@ -108,10 +108,6 @@ const Subject = () => {
           completedCount
         });
 
-          уроки: lessons.length,
-          завершено: completedCount,
-          процент: progressPercent + '%'
-        });
       } catch (error) {
         console.error('Ошибка загрузки курса:', error);
         alert('❌ Курсни юклаб бўлмади. Qayta urinib ko‘ring.');
