@@ -4,8 +4,7 @@ import {
     Send, User, Clock, AlertCircle, Image as ImageIcon,
     Smile, MoreVertical, Search, Pin, Volume2, Users,
     Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
-    Check, CheckCheck, MoreHorizontal, LogOut, Heart,
-    X, MessageCircle, Eye, RefreshCw
+    Check, CheckCheck, MoreHorizontal, LogOut
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -27,10 +26,6 @@ const ForumPage = () => {
     const [selectedMessage, setSelectedMessage] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [showOnlineUsers, setShowOnlineUsers] = useState(false);
-    const [replyTo, setReplyTo] = useState(null);
-    const [editingMessage, setEditingMessage] = useState(null);
-    const [messageReactions, setMessageReactions] = useState({});
-    const [retryCount, setRetryCount] = useState(0);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -40,46 +35,24 @@ const ForumPage = () => {
     // Получаем текущего пользователя и его профиль
     useEffect(() => {
         const getUser = async () => {
-            try {
-                const { data: { user }, error: userError } = await supabase.auth.getUser();
-                
-                if (userError) {
-                    console.error('Ошибка получения пользователя:', userError);
-                    return;
-                }
-                
-                setUser(user);
+            const { data: { user } } = await supabase.auth.getUser();
+            setUser(user);
 
-                if (user) {
-                    const { data: profile, error: profileError } = await supabase
-                        .from('profiles')
-                        .select('*')
-                        .eq('id', user.id)
-                        .single();
-                    
-                    if (profileError) {
-                        console.error('Ошибка получения профиля:', profileError);
-                    } else {
-                        setUserProfile(profile);
-                    }
-                    
-                    try {
-                        await forumApi.updateOnlineStatus(user.id, true);
-                    } catch (statusError) {
-                        console.error('Ошибка обновления статуса:', statusError);
-                    }
-                }
-            } catch (err) {
-                console.error('Ошибка в getUser:', err);
+            if (user) {
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', user.id)
+                    .single();
+                setUserProfile(profile);
+                await forumApi.updateOnlineStatus(user.id, true);
             }
         };
         getUser();
 
         return () => {
             if (user) {
-                forumApi.updateOnlineStatus(user.id, false).catch(err => {
-                    console.error('Ошибка обновления статуса при выходе:', err);
-                });
+                forumApi.updateOnlineStatus(user.id, false);
             }
         };
     }, []);
@@ -89,10 +62,7 @@ const ForumPage = () => {
         const initChat = async () => {
             try {
                 setLoading(true);
-                setError(null);
-                
-                // Сначала получаем сообщения без реакций и ответов
-                const { data, error: fetchError } = await supabase
+                const { data, error } = await supabase
                     .from('forum_messages')
                     .select(`
                         *,
@@ -102,86 +72,15 @@ const ForumPage = () => {
                             username
                         )
                     `)
-                    .is('parent_id', null)
-                    .order('created_at', { ascending: true })
+                    .order('created_at', { ascending: false })
                     .limit(50);
 
-                if (fetchError) {
-                    console.error('Ошибка запроса сообщений:', fetchError);
-                    throw fetchError;
-                }
-
-                // Затем для каждого сообщения загружаем реакции и ответы отдельно
-                const messagesWithDetails = await Promise.all(
-                    (data || []).map(async (msg) => {
-                        try {
-                            // Загружаем реакции
-                            const { data: reactions } = await supabase
-                                .from('message_reactions')
-                                .select(`
-                                    *,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                `)
-                                .eq('message_id', msg.id);
-
-                            // Загружаем ответы
-                            const { data: replies } = await supabase
-                                .from('forum_messages')
-                                .select(`
-                                    *,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                `)
-                                .eq('parent_id', msg.id)
-                                .order('created_at', { ascending: true });
-
-                            return {
-                                ...msg,
-                                reactions: reactions || [],
-                                replies: replies || []
-                            };
-                        } catch (err) {
-                            console.error(`Ошибка загрузки деталей для сообщения ${msg.id}:`, err);
-                            return {
-                                ...msg,
-                                reactions: [],
-                                replies: []
-                            };
-                        }
-                    })
-                );
-
-                setMessages(messagesWithDetails);
-                
-                // Формируем объект реакций
-                const reactionsObj = {};
-                messagesWithDetails.forEach(msg => {
-                    reactionsObj[msg.id] = msg.reactions || [];
-                });
-                setMessageReactions(reactionsObj);
-
-                // Загружаем онлайн пользователей
-                try {
-                    await fetchOnlineUsers();
-                } catch (onlineError) {
-                    console.error('Ошибка загрузки онлайн пользователей:', onlineError);
-                }
-                
+                if (error) throw error;
+                setMessages(data.reverse());
+                fetchOnlineUsers();
             } catch (err) {
                 console.error('Ошибка загрузки сообщений:', err);
-                setError('Хабарларни юклаб бўлмади. Илтимос, қайта урунинг.');
-                
-                // Автоматическая повторная попытка через 3 секунды (максимум 3 попытки)
-                if (retryCount < 3) {
-                    setTimeout(() => {
-                        setRetryCount(prev => prev + 1);
-                    }, 3000);
-                }
+                setError(err.message);
             } finally {
                 setLoading(false);
                 setTimeout(() => {
@@ -189,162 +88,68 @@ const ForumPage = () => {
                 }, 100);
             }
         };
-        
         initChat();
-    }, [retryCount]);
+    }, []);
 
     // Real-time подписка
     useEffect(() => {
-        let messagesChannel;
-        let onlineChannel;
+        const messagesChannel = supabase
+            .channel('forum-messages-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'forum_messages'
+                },
+                async (payload) => {
+                    try {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('full_name, avatar_url, username')
+                            .eq('id', payload.new.user_id)
+                            .single();
 
-        const setupSubscriptions = async () => {
-            try {
-                // Подписка на новые сообщения
-                messagesChannel = supabase
-                    .channel('forum-messages-telegram')
-                    .on(
-                        'postgres_changes',
-                        {
-                            event: 'INSERT',
-                            schema: 'public',
-                            table: 'forum_messages'
-                        },
-                        async (payload) => {
-                            try {
-                                // Загружаем профиль пользователя
-                                const { data: profile } = await supabase
-                                    .from('profiles')
-                                    .select('full_name, avatar_url, username')
-                                    .eq('id', payload.new.user_id)
-                                    .single();
-
-                                const newMessage = {
-                                    ...payload.new,
-                                    profiles: profile || {
-                                        full_name: 'Пользователь',
-                                        avatar_url: null,
-                                        username: null
-                                    },
-                                    reactions: [],
-                                    replies: []
-                                };
-
-                                // Если это ответ на существующее сообщение
-                                if (newMessage.parent_id) {
-                                    setMessages(prev => prev.map(msg => {
-                                        if (msg.id === newMessage.parent_id) {
-                                            return {
-                                                ...msg,
-                                                replies: [...(msg.replies || []), newMessage]
-                                            };
-                                        }
-                                        return msg;
-                                    }));
-                                } else {
-                                    // Если это новое основное сообщение
-                                    setMessages(prev => [...prev, newMessage]);
-                                }
-
-                                if (isScrolledToBottom) {
-                                    setTimeout(() => {
-                                        scrollToBottom();
-                                    }, 50);
-                                }
-                            } catch (error) {
-                                console.error('Ошибка обработки нового сообщения:', error);
+                        setMessages(prev => [...prev, {
+                            ...payload.new,
+                            profiles: profile || {
+                                full_name: 'Пользователь',
+                                avatar_url: null,
+                                username: null
                             }
-                        }
-                    )
-                    .on(
-                        'postgres_changes',
-                        {
-                            event: 'INSERT',
-                            schema: 'public',
-                            table: 'message_reactions'
-                        },
-                        async (payload) => {
-                            try {
-                                const { data: reaction } = await supabase
-                                    .from('message_reactions')
-                                    .select(`
-                                        *,
-                                        profiles:user_id (
-                                            full_name,
-                                            avatar_url
-                                        )
-                                    `)
-                                    .eq('id', payload.new.id)
-                                    .single();
+                        }]);
 
-                                if (reaction) {
-                                    setMessageReactions(prev => ({
-                                        ...prev,
-                                        [reaction.message_id]: [
-                                            ...(prev[reaction.message_id] || []),
-                                            reaction
-                                        ]
-                                    }));
-                                }
-                            } catch (error) {
-                                console.error('Ошибка обработки реакции:', error);
-                            }
+                        if (isScrolledToBottom) {
+                            setTimeout(() => {
+                                scrollToBottom();
+                            }, 50);
                         }
-                    )
-                    .on(
-                        'postgres_changes',
-                        {
-                            event: 'DELETE',
-                            schema: 'public',
-                            table: 'message_reactions'
-                        },
-                        (payload) => {
-                            setMessageReactions(prev => {
-                                const messageId = payload.old.message_id;
-                                const existingReactions = prev[messageId] || [];
-                                const newReactions = existingReactions.filter(
-                                    r => r.id !== payload.old.id
-                                );
-                                return {
-                                    ...prev,
-                                    [messageId]: newReactions
-                                };
-                            });
-                        }
-                    )
-                    .subscribe();
+                    } catch (error) {
+                        console.error('Ошибка обработки сообщения:', error);
+                    }
+                }
+            )
+            .subscribe();
 
-                // Подписка на онлайн статус
-                onlineChannel = supabase
-                    .channel('online-status-telegram')
-                    .on(
-                        'postgres_changes',
-                        {
-                            event: 'UPDATE',
-                            schema: 'public',
-                            table: 'profiles'
-                        },
-                        (payload) => {
-                            // Обновляем онлайн пользователей при любом изменении профиля
-                            fetchOnlineUsers();
-                        }
-                    )
-                    .subscribe();
-
-            } catch (error) {
-                console.error('Ошибка настройки подписок:', error);
-            }
-        };
-
-        setupSubscriptions();
+        const onlineChannel = supabase
+            .channel('online-status-telegram')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'profiles',
+                    filter: 'is_online=eq.true'
+                },
+                (payload) => {
+                    fetchOnlineUsers();
+                }
+            )
+            .subscribe();
 
         return () => {
-            if (messagesChannel) {
-                supabase.removeChannel(messagesChannel);
-            }
-            if (onlineChannel) {
-                supabase.removeChannel(onlineChannel);
-            }
+            supabase.removeChannel(messagesChannel);
+            supabase.removeChannel(onlineChannel);
         };
     }, [isScrolledToBottom]);
 
@@ -365,7 +170,7 @@ const ForumPage = () => {
 
         container.addEventListener('scroll', handleScroll);
         return () => container.removeEventListener('scroll', handleScroll);
-    }, [hasMoreMessages, loadingMore, messages]);
+    }, [hasMoreMessages, loadingMore]);
 
     const loadMoreMessages = async () => {
         if (messages.length === 0 || loadingMore) return;
@@ -384,57 +189,14 @@ const ForumPage = () => {
                         username
                     )
                 `)
-                .is('parent_id', null)
                 .lt('created_at', firstMessage.created_at)
                 .order('created_at', { ascending: false })
                 .limit(30);
 
             if (error) throw error;
 
-            if (data && data.length > 0) {
-                // Загружаем детали для новых сообщений
-                const newMessagesWithDetails = await Promise.all(
-                    data.map(async (msg) => {
-                        try {
-                            const { data: reactions } = await supabase
-                                .from('message_reactions')
-                                .select(`
-                                    *,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                `)
-                                .eq('message_id', msg.id);
-
-                            const { data: replies } = await supabase
-                                .from('forum_messages')
-                                .select(`
-                                    *,
-                                    profiles:user_id (
-                                        full_name,
-                                        avatar_url
-                                    )
-                                `)
-                                .eq('parent_id', msg.id)
-                                .order('created_at', { ascending: true });
-
-                            return {
-                                ...msg,
-                                reactions: reactions || [],
-                                replies: replies || []
-                            };
-                        } catch (err) {
-                            return {
-                                ...msg,
-                                reactions: [],
-                                replies: []
-                            };
-                        }
-                    })
-                );
-
-                const reversedData = newMessagesWithDetails.reverse();
+            if (data.length > 0) {
+                const reversedData = data.reverse();
                 setMessages(prev => [...reversedData, ...prev]);
                 setHasMoreMessages(data.length === 30);
             } else {
@@ -453,7 +215,6 @@ const ForumPage = () => {
             setOnlineUsers(users);
         } catch (err) {
             console.error('Ошибка загрузки онлайн пользователей:', err);
-            setOnlineUsers([]);
         }
     };
 
@@ -462,29 +223,16 @@ const ForumPage = () => {
         if (!newMessage.trim() && !selectedImage) return;
 
         try {
-            setError(null);
             let imageUrl = null;
 
             if (selectedImage && typeof selectedImage !== 'string') {
-                try {
-                    const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
-                    imageUrl = await forumApi.uploadForumImage(file, user.id);
-                } catch (uploadError) {
-                    console.error('Ошибка загрузки изображения:', uploadError);
-                    setError('Расмни юклаб бўлмади');
-                    return;
-                }
+                const file = await dataURLtoFile(selectedImage, `image_${Date.now()}.png`);
+                imageUrl = await forumApi.uploadForumImage(file, user.id);
             } else if (selectedImage) {
                 imageUrl = selectedImage;
             }
 
-            if (editingMessage) {
-                await forumApi.updateMessage(editingMessage.id, newMessage, imageUrl);
-                setEditingMessage(null);
-            } else {
-                await forumApi.sendMessage(newMessage, user.id, imageUrl, replyTo?.id);
-                setReplyTo(null);
-            }
+            await forumApi.sendMessage(newMessage, user.id, imageUrl);
 
             setNewMessage('');
             setSelectedImage(null);
@@ -494,63 +242,6 @@ const ForumPage = () => {
             console.error('Ошибка отправки:', err);
             setError('Хабарни жўнатишда хатолик');
         }
-    };
-
-    const handleReaction = async (messageId, reaction) => {
-        if (!user) return;
-
-        try {
-            const existingReactions = messageReactions[messageId] || [];
-            const userReaction = existingReactions.find(r => r.user_id === user.id);
-
-            if (userReaction) {
-                if (userReaction.reaction === reaction) {
-                    await forumApi.removeReaction(userReaction.id);
-                } else {
-                    await forumApi.updateReaction(userReaction.id, reaction);
-                }
-            } else {
-                await forumApi.addReaction(messageId, user.id, reaction);
-            }
-        } catch (err) {
-            console.error('Ошибка реакции:', err);
-        }
-    };
-
-    const deleteMessage = async (messageId) => {
-        if (!window.confirm('Хабарни ўчиришни хоҳлайсизми?')) return;
-
-        try {
-            await forumApi.deleteMessage(messageId);
-            setMessages(prev => prev.filter(msg => msg.id !== messageId));
-        } catch (err) {
-            console.error('Ошибка удаления:', err);
-            setError('Хабарни ўчиришда хатолик');
-        }
-    };
-
-    const startReply = (message) => {
-        setReplyTo(message);
-        inputRef.current?.focus();
-    };
-
-    const cancelReply = () => {
-        setReplyTo(null);
-    };
-
-    const startEdit = (message) => {
-        setEditingMessage(message);
-        setNewMessage(message.content || '');
-        if (message.image_url) {
-            setSelectedImage(message.image_url);
-        }
-        inputRef.current?.focus();
-    };
-
-    const cancelEdit = () => {
-        setEditingMessage(null);
-        setNewMessage('');
-        setSelectedImage(null);
     };
 
     const dataURLtoFile = (dataurl, filename) => {
@@ -570,9 +261,7 @@ const ForumPage = () => {
     };
 
     const scrollToBottom = () => {
-        if (messagesEndRef.current) {
-            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         setIsScrolledToBottom(true);
     };
 
@@ -611,17 +300,7 @@ const ForumPage = () => {
     };
 
     const formatMessageTime = (date) => {
-        try {
-            return format(new Date(date), 'HH:mm');
-        } catch {
-            return '--:--';
-        }
-    };
-
-    const retryLoadMessages = () => {
-        setRetryCount(prev => prev + 1);
-        setError(null);
-        setLoading(true);
+        return format(new Date(date), 'HH:mm');
     };
 
     const uzLocale = {
@@ -641,28 +320,25 @@ const ForumPage = () => {
     };
 
     const formatDateHeader = (date) => {
-        try {
-            const messageDate = new Date(date);
-            const today = new Date();
+        const messageDate = new Date(date);
+        const today = new Date();
 
-            if (messageDate.toDateString() === today.toDateString()) {
-                return 'Bugun';
-            }
-
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            if (messageDate.toDateString() === yesterday.toDateString()) {
-                return 'Kecha';
-            }
-
-            const day = messageDate.getDate();
-            const monthIndex = messageDate.getMonth();
-            const year = messageDate.getFullYear();
-
-            return `${day} ${uzLocale.months[monthIndex]} ${year}`;
-        } catch {
-            return 'Мальум бўлмаган сана';
+        if (messageDate.toDateString() === today.toDateString()) {
+            return 'Bugun';
         }
+
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        if (messageDate.toDateString() === yesterday.toDateString()) {
+            return 'Kecha';
+        }
+
+        // Своя функция форматирования
+        const day = messageDate.getDate();
+        const monthIndex = messageDate.getMonth();
+        const year = messageDate.getFullYear();
+
+        return `${day} ${uzLocale.months[monthIndex]} ${year}`;
     };
 
     const groupMessagesByDate = () => {
@@ -693,21 +369,6 @@ const ForumPage = () => {
 
     const MessageItem = ({ message, isOwn }) => {
         const [showActions, setShowActions] = useState(false);
-        const [showReactions, setShowReactions] = useState(false);
-
-        const reactions = messageReactions[message.id] || [];
-
-        const groupedReactions = reactions.reduce((acc, reaction) => {
-            if (!acc[reaction.reaction]) {
-                acc[reaction.reaction] = {
-                    count: 0,
-                    users: []
-                };
-            }
-            acc[reaction.reaction].count++;
-            acc[reaction.reaction].users.push(reaction.profiles);
-            return acc;
-        }, {});
 
         return (
             <div
@@ -721,16 +382,8 @@ const ForumPage = () => {
                             {message.profiles?.avatar_url ? (
                                 <img
                                     src={message.profiles.avatar_url}
-                                    alt={message.profiles.full_name || 'User'}
+                                    alt={message.profiles.full_name}
                                     className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                        e.target.parentElement.innerHTML = `
-                                            <div class="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
-                                                <User class="w-3 h-3 md:w-4 md:h-4 text-white" />
-                                            </div>
-                                        `;
-                                    }}
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
@@ -754,14 +407,6 @@ const ForumPage = () => {
                     )}
 
                     <div className="relative">
-                        {replyTo?.id === message.id && (
-                            <div className="mb-1 ml-2 p-1 bg-blue-500/10 rounded-lg border-l-2 border-blue-500">
-                                <p className="text-xs text-gray-600 dark:text-gray-300 truncate">
-                                    {replyTo.content?.substring(0, 50)}...
-                                </p>
-                            </div>
-                        )}
-
                         <div className={`rounded-xl md:rounded-2xl px-2 md:px-4 py-1.5 md:py-2 ${isOwn
                             ? 'bg-blue-500 text-white rounded-br-md'
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
@@ -787,76 +432,10 @@ const ForumPage = () => {
                                 </p>
                             )}
 
-                            {/* Отображение ответов */}
-                            {message.replies && message.replies.length > 0 && (
-                                <div className="mt-2 border-l-2 border-blue-300 pl-2 md:pl-3">
-                                    {message.replies.slice(0, 3).map((reply, idx) => (
-                                        <div key={reply.id || idx} className="mb-1 last:mb-0">
-                                            <div className="flex items-start gap-1">
-                                                <div className="w-4 h-4 rounded-full overflow-hidden flex-shrink-0 mt-0.5">
-                                                    {reply.profiles?.avatar_url ? (
-                                                        <img
-                                                            src={reply.profiles.avatar_url}
-                                                            alt={reply.profiles.full_name || 'User'}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <div className="w-full h-full bg-gray-300 flex items-center justify-center">
-                                                            <User className="w-2 h-2 text-gray-600" />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div>
-                                                    <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-                                                        {reply.profiles?.full_name || 'Номаълум'}
-                                                    </p>
-                                                    <p className="text-xs text-gray-700 dark:text-gray-300">
-                                                        {reply.content}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {message.replies.length > 3 && (
-                                        <button
-                                            onClick={() => setSelectedMessage(message)}
-                                            className="text-xs text-blue-500 hover:text-blue-600 mt-1"
-                                        >
-                                            + {message.replies.length - 3} та жавоб
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Реакции */}
-                            {Object.keys(groupedReactions).length > 0 && (
-                                <div className="mt-1.5 flex items-center gap-1">
-                                    {Object.entries(groupedReactions).map(([reaction, data]) => (
-                                        <button
-                                            key={reaction}
-                                            onClick={() => handleReaction(message.id, reaction)}
-                                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs ${reactions.find(r => r.user_id === user?.id && r.reaction === reaction)
-                                                    ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                                                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                                                } hover:bg-gray-200 dark:hover:bg-gray-600`}
-                                            onMouseEnter={() => setShowReactions(true)}
-                                            onMouseLeave={() => setShowReactions(false)}
-                                            title={`${data.users.map(u => u?.full_name || 'Пользователь').join(', ')}`}
-                                        >
-                                            <span>{reaction}</span>
-                                            <span>{data.count}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-
                             <div className={`flex items-center justify-end gap-1 mt-0.5 md:mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
                                 <span className="text-[10px] md:text-xs">
                                     {formatMessageTime(message.created_at)}
                                 </span>
-                                {isOwn && message.edited_at && (
-                                    <span className="text-[8px] md:text-[10px] italic">(таҳрирланган)</span>
-                                )}
                                 {isOwn && (
                                     <CheckCheck className="w-2.5 h-2.5 md:w-3 md:h-3" />
                                 )}
@@ -868,40 +447,15 @@ const ForumPage = () => {
                                 ? '-left-10 md:-left-14 flex-row-reverse'
                                 : '-right-10 md:-right-14'
                                 }`}>
-                                <button
-                                    onClick={() => startReply(message)}
-                                    className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                                    title="Жавоб бериш"
-                                >
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <Reply className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
-                                <div className="relative">
-                                    <button
-                                        onClick={() => handleReaction(message.id, '👍')}
-                                        className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                                        title="Реакция қўшиш"
-                                    >
-                                        <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
-                                    </button>
-                                </div>
-                                {isOwn && (
-                                    <>
-                                        <button
-                                            onClick={() => startEdit(message)}
-                                            className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                                            title="Таҳрирлаш"
-                                        >
-                                            <Edit className="w-3 h-3 md:w-4 md:h-4" />
-                                        </button>
-                                        <button
-                                            onClick={() => deleteMessage(message.id)}
-                                            className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-red-500"
-                                            title="Ўчириш"
-                                        >
-                                            <Delete className="w-3 h-3 md:w-4 md:h-4" />
-                                        </button>
-                                    </>
-                                )}
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <MoreHorizontal className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
                             </div>
                         )}
                     </div>
@@ -936,14 +490,6 @@ const ForumPage = () => {
                                     src={onlineUsers[0].avatar_url}
                                     alt="Группа"
                                     className="w-full h-full object-cover"
-                                    onError={(e) => {
-                                        e.target.style.display = 'none';
-                                        e.target.parentElement.innerHTML = `
-                                            <div class="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
-                                                <Users class="w-4 h-4 md:w-5 md:h-5 text-white" />
-                                            </div>
-                                        `;
-                                    }}
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
@@ -973,6 +519,7 @@ const ForumPage = () => {
                         className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 text-gray-300"
                         title="Forumdan chiqish"
                     >
+                        {/* На мобильных только иконка, на десктопе текст с иконкой */}
                         <div className="flex items-center gap-1 md:gap-2">
                             <LogOut className="w-4 h-4 md:w-5 md:h-5" />
                             <span className="hidden md:inline text-sm">Чиқиш</span>
@@ -983,10 +530,11 @@ const ForumPage = () => {
 
             {/* Основное содержимое */}
             <div className="flex flex-1 overflow-hidden">
-                {/* Боковая панель */}
+                {/* Боковая панель (скрыта на мобильных, открывается по кнопке) */}
                 {(showOnlineUsers || window.innerWidth >= 1024) && (
                     <div className={`lg:block ${showOnlineUsers ? 'absolute inset-0 z-50 bg-gray-800' : 'hidden'} lg:relative lg:w-80 lg:inset-auto`}>
                         <div className="h-full lg:border-r lg:border-gray-700 bg-gray-800 overflow-y-auto">
+                            {/* Кнопка закрытия на мобильных */}
                             {showOnlineUsers && (
                                 <div className="lg:hidden p-4 border-b border-gray-700 flex justify-between items-center">
                                     <h2 className="font-semibold text-gray-300">Онлайн фойдаланувчилар</h2>
@@ -1016,16 +564,8 @@ const ForumPage = () => {
                                                         {onlineUser.avatar_url ? (
                                                             <img
                                                                 src={onlineUser.avatar_url}
-                                                                alt={onlineUser.full_name || 'User'}
+                                                                alt={onlineUser.full_name}
                                                                 className="w-full h-full object-cover"
-                                                                onError={(e) => {
-                                                                    e.target.style.display = 'none';
-                                                                    e.target.parentElement.innerHTML = `
-                                                                        <div class="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
-                                                                            <User class="w-4 h-4 md:w-5 md:h-5 text-white" />
-                                                                        </div>
-                                                                    `;
-                                                                }}
                                                             />
                                                         ) : (
                                                             <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
@@ -1037,44 +577,43 @@ const ForumPage = () => {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-xs md:text-sm font-medium text-white truncate">
-                                                        {onlineUser.full_name || onlineUser.email?.split('@')[0] || 'Пользователь'}
+                                                        {onlineUser.full_name || onlineUser.email?.split('@')[0]}
                                                         {onlineUser.id === user?.id && ' (Сиз)'}
                                                     </p>
                                                     <p className="text-[10px] md:text-xs text-gray-400">
                                                         {(() => {
-                                                            try {
-                                                                const lastSeen = new Date(onlineUser.last_seen);
-                                                                const now = new Date();
-                                                                const diffInSeconds = Math.floor((now - lastSeen) / 1000);
+                                                            const lastSeen = new Date(onlineUser.last_seen);
+                                                            const now = new Date();
+                                                            const diffInSeconds = Math.floor((now - lastSeen) / 1000);
 
-                                                                if (diffInSeconds < 60) {
-                                                                    return 'Online';
-                                                                }
-
-                                                                const formatUzTimeAgo = (date) => {
-                                                                    const now = new Date();
-                                                                    const seconds = Math.floor((now - date) / 1000);
-
-                                                                    const minutes = Math.floor(seconds / 60);
-                                                                    if (minutes < 60) return `${minutes} daqiqa oldin`;
-
-                                                                    const hours = Math.floor(minutes / 60);
-                                                                    if (hours < 24) return `${hours} soat oldin`;
-
-                                                                    const days = Math.floor(hours / 24);
-                                                                    if (days < 30) return `${days} kun oldin`;
-
-                                                                    const months = Math.floor(days / 30);
-                                                                    if (months < 12) return `${months} oy oldin`;
-
-                                                                    const years = Math.floor(months / 12);
-                                                                    return `${years} yil oldin`;
-                                                                };
-
-                                                                return formatUzTimeAgo(lastSeen);
-                                                            } catch {
+                                                            // Если пользователь был онлайн менее 60 секунд назад
+                                                            if (diffInSeconds < 60) {
                                                                 return 'Online';
                                                             }
+
+                                                            // Функция для форматирования времени на узбекском
+                                                            const formatUzTimeAgo = (date) => {
+                                                                const now = new Date();
+                                                                const seconds = Math.floor((now - date) / 1000);
+
+                                                                const minutes = Math.floor(seconds / 60);
+                                                                if (minutes < 60) return `${minutes} daqiqa oldin`;
+
+                                                                const hours = Math.floor(minutes / 60);
+                                                                if (hours < 24) return `${hours} soat oldin`;
+
+                                                                const days = Math.floor(hours / 24);
+                                                                if (days < 30) return `${days} kun oldin`;
+
+                                                                const months = Math.floor(days / 30);
+                                                                if (months < 12) return `${months} oy oldin`;
+
+                                                                const years = Math.floor(months / 12);
+                                                                return `${years} yil oldin`;
+                                                            };
+
+                                                            // Возвращаем отформатированное время
+                                                            return formatUzTimeAgo(lastSeen);
                                                         })()}
                                                     </p>
                                                 </div>
@@ -1111,23 +650,9 @@ const ForumPage = () => {
                             backgroundImage: `url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z' fill='%239C92AC' fill-opacity='0.05' fill-rule='evenodd'/%3E%3C/svg%3E")`
                         }}
                     >
-                        {error ? (
-                            <div className="flex flex-col items-center justify-center h-full p-4">
-                                <AlertCircle className="w-12 h-12 md:w-16 md:h-16 mb-4 text-red-500" />
-                                <p className="text-base md:text-xl text-gray-300 text-center mb-2">{error}</p>
-                                <p className="text-sm text-gray-400 text-center mb-6">Илтимос, қайта урунинг</p>
-                                <button
-                                    onClick={retryLoadMessages}
-                                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                                >
-                                    <RefreshCw className="w-4 h-4" />
-                                    Қайта уруниш
-                                </button>
-                            </div>
-                        ) : loading ? (
-                            <div className="flex flex-col items-center justify-center h-full">
-                                <div className="animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 border-blue-500 mb-4"></div>
-                                <p className="text-gray-400">Хабарлар юкланмоқда...</p>
+                        {loading ? (
+                            <div className="flex justify-center items-center h-full">
+                                <div className="animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 border-blue-500"></div>
                             </div>
                         ) : messages.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-full text-gray-500 p-4">
@@ -1164,64 +689,8 @@ const ForumPage = () => {
                         )}
                     </div>
 
-                    {/* Панель ввода сообщения с индикатором ответа/редактирования */}
+                    {/* Панель ввода сообщения */}
                     <div className="border-t border-gray-700 bg-gray-800">
-                        {error && !loading && (
-                            <div className="px-3 md:px-4 pt-2">
-                                <div className="bg-red-500/10 border-l-2 border-red-500 rounded-r-lg p-2 md:p-3">
-                                    <div className="flex items-center gap-2">
-                                        <AlertCircle className="w-4 h-4 text-red-500" />
-                                        <p className="text-xs md:text-sm text-red-400">{error}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {replyTo && (
-                            <div className="px-3 md:px-4 pt-2 md:pt-3">
-                                <div className="bg-blue-500/10 border-l-2 border-blue-500 rounded-r-lg p-2 md:p-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Reply className="w-3 h-3 md:w-4 md:h-4 text-blue-500" />
-                                            <span className="text-xs md:text-sm text-blue-500 font-medium">
-                                                {replyTo.profiles?.full_name} га жавоб
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={cancelReply}
-                                            className="p-1 hover:bg-blue-500/20 rounded-full"
-                                        >
-                                            <X className="w-3 h-3 md:w-4 md:h-4 text-blue-500" />
-                                        </button>
-                                    </div>
-                                    <p className="text-xs md:text-sm text-gray-300 mt-1 truncate">
-                                        {replyTo.content}
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {editingMessage && (
-                            <div className="px-3 md:px-4 pt-2 md:pt-3">
-                                <div className="bg-yellow-500/10 border-l-2 border-yellow-500 rounded-r-lg p-2 md:p-3">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <Edit className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" />
-                                            <span className="text-xs md:text-sm text-yellow-500 font-medium">
-                                                Хабарни таҳрирлаш
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={cancelEdit}
-                                            className="p-1 hover:bg-yellow-500/20 rounded-full"
-                                        >
-                                            <X className="w-3 h-3 md:w-4 md:h-4 text-yellow-500" />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
                         {selectedImage && (
                             <div className="px-3 md:px-4 pt-2 md:pt-3">
                                 <div className="relative inline-block">
@@ -1266,7 +735,7 @@ const ForumPage = () => {
                                         type="text"
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
-                                        placeholder={replyTo ? "Жавобингизни ёзинг..." : editingMessage ? "Хабарни таҳрирлаш..." : "Хабарингизни ёзинг..."}
+                                        placeholder="Хабарингизни ёзинг..."
                                         className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 text-sm md:text-base"
                                         onFocus={() => setShowEmojiPicker(false)}
                                     />
@@ -1281,17 +750,13 @@ const ForumPage = () => {
                                     </button>
                                 </div>
 
-                                {(newMessage.trim() || selectedImage) ? (
+                                {newMessage.trim() || selectedImage ? (
                                     <button
                                         type="submit"
                                         className="p-2 md:p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
-                                        title={editingMessage ? "Таҳрирлаш" : "Жўнатиш"}
+                                        title="Жўнатиш"
                                     >
-                                        {editingMessage ? (
-                                            <Check className="w-4 h-4 md:w-5 md:h-5" />
-                                        ) : (
-                                            <Send className="w-4 h-4 md:w-5 md:h-5" />
-                                        )}
+                                        <Send className="w-4 h-4 md:w-5 md:h-5" />
                                     </button>
                                 ) : (
                                     <button
