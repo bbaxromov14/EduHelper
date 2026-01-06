@@ -60,6 +60,7 @@ const ForumPage = () => {
         const initChat = async () => {
             try {
                 setLoading(true);
+                // ИСПРАВЛЕНО: изменили 'reactions' на 'message_reactions'
                 const { data, error } = await supabase
                     .from('forum_messages')
                     .select(`
@@ -69,7 +70,7 @@ const ForumPage = () => {
                             avatar_url,
                             username
                         ),
-                        reactions (
+                        message_reactions (  // ← ИСПРАВЛЕНО!
                             id,
                             user_id,
                             reaction_type,
@@ -123,7 +124,7 @@ const ForumPage = () => {
                                 avatar_url: null,
                                 username: null
                             },
-                            reactions: []
+                            message_reactions: []  // ← ИСПРАВЛЕНО!
                         }]);
                         
                         if (isScrolledToBottom) {
@@ -141,12 +142,15 @@ const ForumPage = () => {
                 {
                     event: 'INSERT',
                     schema: 'public',
-                    table: 'message_reactions'
+                    table: 'message_reactions'  // ← ИСПРАВЛЕНО!
                 },
                 async (payload) => {
                     setMessages(prev => prev.map(msg => 
                         msg.id === payload.new.message_id 
-                            ? { ...msg, reactions: [...(msg.reactions || []), payload.new] }
+                            ? { 
+                                ...msg, 
+                                message_reactions: [...(msg.message_reactions || []), payload.new] 
+                            }
                             : msg
                     ));
                 }
@@ -156,14 +160,14 @@ const ForumPage = () => {
                 {
                     event: 'DELETE',
                     schema: 'public',
-                    table: 'message_reactions'
+                    table: 'message_reactions'  // ← ИСПРАВЛЕНО!
                 },
                 async (payload) => {
                     setMessages(prev => prev.map(msg => 
                         msg.id === payload.old.message_id 
                             ? { 
                                 ...msg, 
-                                reactions: (msg.reactions || []).filter(r => r.id !== payload.old.id) 
+                                message_reactions: (msg.message_reactions || []).filter(r => r.id !== payload.old.id) 
                             }
                             : msg
                     ));
@@ -219,6 +223,7 @@ const ForumPage = () => {
             setLoadingMore(true);
             const firstMessage = messages[0];
             
+            // ИСПРАВЛЕНО: изменили 'reactions' на 'message_reactions'
             const { data, error } = await supabase
                 .from('forum_messages')
                 .select(`
@@ -228,7 +233,7 @@ const ForumPage = () => {
                         avatar_url,
                         username
                     ),
-                    reactions (
+                    message_reactions (  // ← ИСПРАВЛЕНО!
                         id,
                         user_id,
                         reaction_type,
@@ -424,8 +429,9 @@ const ForumPage = () => {
     };
 
     const ReactionButton = ({ message, type, icon: Icon, color }) => {
-        const userReaction = message.reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
-        const count = message.reactions?.filter(r => r.reaction_type === type).length || 0;
+        // ИСПРАВЛЕНО: изменили 'reactions' на 'message_reactions'
+        const userReaction = message.message_reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
+        const count = message.message_reactions?.filter(r => r.reaction_type === type).length || 0;
         
         if (count === 0 && !userReaction) return null;
 
@@ -448,7 +454,8 @@ const ForumPage = () => {
 
     const MessageItem = ({ message, isOwn }) => {
         const [showActions, setShowActions] = useState(false);
-        const userReaction = message.reactions?.find(r => r.user_id === user?.id);
+        // ИСПРАВЛЕНО: изменили 'reactions' на 'message_reactions'
+        const userReaction = message.message_reactions?.find(r => r.user_id === user?.id);
 
         return (
             <div 
@@ -551,7 +558,8 @@ const ForumPage = () => {
                         </div>
 
                         {/* Реакции */}
-                        {(message.reactions?.length > 0 || showActions) && (
+                        {/* ИСПРАВЛЕНО: изменили 'reactions' на 'message_reactions' */}
+                        {(message.message_reactions?.length > 0 || showActions) && (
                             <div className={`flex flex-wrap gap-1 mt-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                                 <ReactionButton message={message} type="like" icon={ThumbsUp} color="#3b82f6" />
                                 <ReactionButton message={message} type="heart" icon={Heart} color="#ef4444" />
