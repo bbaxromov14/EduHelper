@@ -215,8 +215,7 @@ const Navbar = () => {
                     ))}
                     <NavLink
                         to="/forum"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
+                        className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
                     >
                         Forum
                     </NavLink>

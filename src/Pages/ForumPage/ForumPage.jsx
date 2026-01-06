@@ -501,7 +501,7 @@ const ForumPage = () => {
             </div>
 
             {/* Основное содержимое */}
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 overflow-hidden w-[100%]">
                 {/* Боковая панель (скрыта на мобильных) */}
                 <div className="hidden lg:block w-80 border-r border-gray-700 bg-gray-800 overflow-y-auto">
                     <div className="p-4">
