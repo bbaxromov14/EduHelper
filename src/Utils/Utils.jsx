@@ -3,6 +3,7 @@ import Login from "../Pages/Login/Login.jsx";
 import Progress from "../Pages/Progress/Progress.jsx";
 import Subjects from "../Pages/Subjects/Subjects.jsx";
 import About from "../Pages/About/About.jsx";
+import ForumPage from "../Pages/ForumPage/ForumPage.jsx";
 // УБЕРИТЕ импорт Subject отсюда, если он есть
 
 let items = [
@@ -30,7 +31,12 @@ let items = [
         path: "about", 
         element: <About />
     },
-    // УБЕРИТЕ маршрут Subject отсюда
+    {
+        id: 5,
+        title: "Forum",
+        path: "forum", 
+        element: <ForumPage />
+    },
 ]
 
 export default items

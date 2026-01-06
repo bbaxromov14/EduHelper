@@ -213,14 +213,6 @@ const Navbar = () => {
                             {item.title}
                         </NavLink>
                     ))}
-                    {(
-                        <NavLink 
-                            to="/forum" 
-                            className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
-                        >
-                            Forum
-                        </NavLink>
-                    )}
                 </div>
 
                 {/* Правая часть */}
