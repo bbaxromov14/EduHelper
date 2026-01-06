@@ -303,125 +303,165 @@ const Home = () => {
         </div>
       </section>
 
-      {/* МАШХУР КУРСЛАР — с замками и премиум-логикой */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
-        {courses.map((course, index) => {
-          const accessible = checkCourseAccess(course);
-          const lessonCount = getLessonCount(course);
-          const courseImage = getCourseImage(course);
+      {/* МАШХУР КУРСЛАР — красивая секция с заголовком и карточками */}
+      <section className="py-20 px-4 md:px-6">
+        <div className="max-w-7xl mx-auto">
 
-          return (
-            <NavLink
-              key={course.id}
-              to={
-                accessible
-                  ? `/subject/${course.id}`
-                  : course.access_type === 'paid'
-                    ? `/course-buy/${course.id}`
-                    : '/premium'
-              }
-              className="group relative block"
-              style={{
-                animation: 'fadeUp 0.9s ease-out forwards',
-                animationDelay: `${index * 0.12}s`,
-                opacity: 0,
-              }}
-            >
-              <div className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
-                }`}>
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
+          {/* Заголовок секции */}
+          <div className="text-center mb-16">
+            <h2 className="text-5xl md:text-6xl lg:text-7xl font-black mb-6">
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
+                Mashhur Kurslar
+              </span>
+            </h2>
+            <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400">
+              Premium • Bepul • Eng sifatli va dolzarb ta'lim
+            </p>
+          </div>
 
-                {!accessible && (
-                  <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
-                    <div className="text-center p-6">
-                      <div className="text-6xl md:text-8xl mb-4">🔒</div>
-                      {!isAuthenticated ? (
-                        <>
-                          <p className="text-2xl md:text-3xl font-bold text-white mb-4">Darslarni ko'rish uchun</p>
-                          <p className="text-3xl md:text-4xl font-black text-yellow-400">ro'yxatdan o'ting</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-2xl md:text-3xl font-bold text-white">
-                            {course.access_type === 'paid' ? 'Pullik kurs' : 'Premium kurs'}
-                          </p>
-                          <p className="text-gray-200 text-base mt-2">
-                            {course.access_type === 'paid' ? 'Sotib olish →' : 'Premium obuna →'}
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
+          {/* Сетка карточек курсов */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
+            {courses.map((course, index) => {
+              const accessible = checkCourseAccess(course);
+              const lessonCount = getLessonCount(course);
+              const courseImage = getCourseImage(course);
 
-                <div className="relative h-full flex flex-col">
-                  <div className="relative h-48 md:h-64 overflow-hidden">
-                    <img
-                      src={courseImage}
-                      alt={course.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
-                      loading="lazy"
-                      onError={(e) => (e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80')}
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                    <div className="absolute top-4 left-4 text-4xl md:text-6xl bg-black/60 backdrop-blur-md rounded-2xl p-3 border border-white/20">
-                      {getCourseIcon(course.title)}
-                    </div>
-                  </div>
-
-                  <div className="p-6 md:p-8 flex flex-col flex-1">
-                    <h3 className="text-2xl md:text-3xl font-black text-gray-800 dark:text-white mb-3">
-                      {course.title}
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base mb-6 line-clamp-3">
-                      {course.description || 'Tavsif mavjud emas'}
-                    </p>
-
-                    <div className="flex flex-wrap gap-3 mb-6">
-                      {course.difficulty_level && (
-                        <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm">
-                          {course.difficulty_level}
-                        </span>
-                      )}
-                      {course.estimated_hours && (
-                        <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-sm">
-                          ⏱️ {course.estimated_hours} soat
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-end justify-between mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <div>
-                        <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
-                          {lessonCount}
-                        </div>
-                        <div className="text-sm text-gray-500 dark:text-gray-400">ta dars</div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-xl md:text-2xl font-black ${accessible ? 'text-green-500' : 'text-yellow-500'}`}>
-                          {accessible ? 'OCHIQ' : !isAuthenticated ? "RO'YXATDAN O'TING" : course.access_type === 'paid' ? 'SOTIB OLISH' : 'PREMIUM'}
-                        </div>
-                        <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
-                          {accessible ? 'Kirish →' : !isAuthenticated ? "Bepul ro'yxatdan o'tish →" : course.access_type === 'paid' ? 'Sotib olish →' : 'Obuna →'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
-                    <div className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${accessible
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+              return (
+                <NavLink
+                  key={course.id}
+                  to={
+                    accessible
+                      ? `/subject/${course.id}`
                       : course.access_type === 'paid'
-                        ? 'bg-gradient-to-r from-orange-500 to-red-500'
-                        : 'bg-gradient-to-r from-yellow-500 to-orange-500'
-                      }`} />
+                        ? `/course-buy/${course.id}`
+                        : '/premium'
+                  }
+                  className="group relative block"
+                  style={{
+                    animation: 'fadeUp 0.9s ease-out forwards',
+                    animationDelay: `${index * 0.12}s`,
+                    opacity: 0,
+                  }}
+                >
+                  <div className={`relative h-full bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden border-2 transition-all duration-700 hover:scale-105 hover:-translate-y-4 hover:shadow-3xl ${accessible ? 'border-gray-200 dark:border-gray-700' : 'border-yellow-500'
+                    }`}>
+                    {/* Градиентный блик при hover */}
+                    <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl blur-xl opacity-0 group-hover:opacity-70 transition-opacity duration-1000 pointer-events-none" />
+
+                    {/* Замок для недоступных курсов */}
+                    {!accessible && (
+                      <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center rounded-3xl">
+                        <div className="text-center p-6">
+                          <div className="text-6xl md:text-8xl mb-4">🔒</div>
+                          {!isAuthenticated ? (
+                            <>
+                              <p className="text-2xl md:text-3xl font-bold text-white mb-4">
+                                Darslarni ko'rish uchun
+                              </p>
+                              <p className="text-3xl md:text-4xl font-black text-yellow-400">
+                                ro'yxatdan o'ting
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-2xl md:text-3xl font-bold text-white">
+                                {course.access_type === 'paid' ? 'Pullik kurs' : 'Premium kurs'}
+                              </p>
+                              <p className="text-gray-200 text-base mt-2">
+                                {course.access_type === 'paid' ? 'Sotib olish →' : 'Premium obuna →'}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Основная карточка */}
+                    <div className="relative h-full flex flex-col">
+                      {/* Обложка + иконка */}
+                      <div className="relative h-48 md:h-64 overflow-hidden">
+                        <img
+                          src={courseImage}
+                          alt={course.title}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000"
+                          loading="lazy"
+                          onError={(e) => (e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80')}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                        <div className="absolute top-4 left-4 text-4xl md:text-6xl bg-black/60 backdrop-blur-md rounded-2xl p-3 border border-white/20">
+                          {getCourseIcon(course.title)}
+                        </div>
+                      </div>
+
+                      {/* Контент карточки */}
+                      <div className="p-6 md:p-8 flex flex-col flex-1">
+                        <h3 className="text-2xl md:text-3xl font-black text-gray-800 dark:text-white mb-3">
+                          {course.title}
+                        </h3>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm md:text-base mb-6 line-clamp-3">
+                          {course.description || 'Tavsif mavjud emas'}
+                        </p>
+
+                        {/* Теги: сложность и время */}
+                        <div className="flex flex-wrap gap-3 mb-6">
+                          {course.difficulty_level && (
+                            <span className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 rounded-full text-sm">
+                              {course.difficulty_level}
+                            </span>
+                          )}
+                          {course.estimated_hours && (
+                            <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-sm">
+                              ⏱️ {course.estimated_hours} soat
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Нижняя часть: количество уроков + статус */}
+                        <div className="flex items-end justify-between mt-auto pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <div>
+                            <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600">
+                              {lessonCount}
+                            </div>
+                            <div className="text-sm text-gray-500 dark:text-gray-400">ta dars</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`text-xl md:text-2xl font-black ${accessible ? 'text-green-500' : 'text-yellow-500'}`}>
+                              {accessible ? 'OCHIQ' : !isAuthenticated ? "RO'YXATDAN O'TING" : course.access_type === 'paid' ? 'SOTIB OLISH' : 'PREMIUM'}
+                            </div>
+                            <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
+                              {accessible ? 'Kirish →' : !isAuthenticated ? "Bepul ro'yxatdan o'tish →" : course.access_type === 'paid' ? 'Sotib olish →' : 'Obuna →'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Анимированная полоска снизу */}
+                      <div className="absolute bottom-0 left-0 right-0 h-2 overflow-hidden rounded-b-3xl">
+                        <div className={`absolute inset-0 -translate-x-full group-hover:translate-x-0 transition-transform duration-1000 ease-out ${accessible
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-500'
+                            : course.access_type === 'paid'
+                              ? 'bg-gradient-to-r from-orange-500 to-red-500'
+                              : 'bg-gradient-to-r from-yellow-500 to-orange-500'
+                          }`} />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                </NavLink>
+              );
+            })}
+          </div>
+
+          {/* Кнопка перехода ко всем курсам */}
+          <div className="text-center mt-16">
+            <NavLink
+              to="/subjects"
+              className="inline-block px-12 py-6 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-2xl font-black rounded-full shadow-2xl hover:scale-110 hover:shadow-purple-500/50 transition-all duration-300"
+            >
+              BARCHA KURSLARNI KO'RISH →
             </NavLink>
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      </section>
       {/* Почему EduHelper */}
       <section className="py-20 bg-gradient-to-b from-white to-gray-50 dark:from-gray-900 dark:to-black">
         <div className="container mx-auto px-6 text-center">

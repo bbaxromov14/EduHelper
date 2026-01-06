@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
 import { 
-  Send, User, Clock, AlertCircle, Image as ImageIcon, 
-  Smile, MoreVertical, Search, Pin, Volume2, Users,
-  Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
-  Check, CheckCheck, MoreHorizontal
+  Send, User, Clock, MoreVertical, Search, Volume2, Users,
+  Paperclip, Smile, ThumbsUp, Heart, Laugh, Sad, Angry, 
+  Reply, Edit, Delete, CheckCheck, X
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -23,8 +22,8 @@ const ForumPage = () => {
     const [hasMoreMessages, setHasMoreMessages] = useState(true);
     const [loadingMore, setLoadingMore] = useState(false);
     const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
-    const [selectedMessage, setSelectedMessage] = useState(null);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [replyingTo, setReplyingTo] = useState(null);
+    const [showReactionsPicker, setShowReactionsPicker] = useState(null);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -69,6 +68,14 @@ const ForumPage = () => {
                             full_name,
                             avatar_url,
                             username
+                        ),
+                        reactions (
+                            id,
+                            user_id,
+                            reaction_type,
+                            profiles:user_id (
+                                full_name
+                            )
                         )
                     `)
                     .order('created_at', { ascending: false })
@@ -115,7 +122,8 @@ const ForumPage = () => {
                                 full_name: 'Пользователь',
                                 avatar_url: null,
                                 username: null
-                            }
+                            },
+                            reactions: []
                         }]);
                         
                         if (isScrolledToBottom) {
@@ -126,6 +134,39 @@ const ForumPage = () => {
                     } catch (error) {
                         console.error('Ошибка обработки сообщения:', error);
                     }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'message_reactions'
+                },
+                async (payload) => {
+                    setMessages(prev => prev.map(msg => 
+                        msg.id === payload.new.message_id 
+                            ? { ...msg, reactions: [...(msg.reactions || []), payload.new] }
+                            : msg
+                    ));
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'message_reactions'
+                },
+                async (payload) => {
+                    setMessages(prev => prev.map(msg => 
+                        msg.id === payload.old.message_id 
+                            ? { 
+                                ...msg, 
+                                reactions: (msg.reactions || []).filter(r => r.id !== payload.old.id) 
+                            }
+                            : msg
+                    ));
                 }
             )
             .subscribe();
@@ -162,7 +203,6 @@ const ForumPage = () => {
             const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 100;
             setIsScrolledToBottom(isBottom);
 
-            // Автоматическая загрузка истории при скролле вверх
             if (scrollTop < 100 && hasMoreMessages && !loadingMore) {
                 loadMoreMessages();
             }
@@ -187,6 +227,14 @@ const ForumPage = () => {
                         full_name,
                         avatar_url,
                         username
+                    ),
+                    reactions (
+                        id,
+                        user_id,
+                        reaction_type,
+                        profiles:user_id (
+                            full_name
+                        )
                     )
                 `)
                 .lt('created_at', firstMessage.created_at)
@@ -232,15 +280,44 @@ const ForumPage = () => {
                 imageUrl = selectedImage;
             }
 
-            await forumApi.sendMessage(newMessage, user.id, imageUrl);
+            const replyToId = replyingTo ? replyingTo.id : null;
+            await forumApi.sendMessage(newMessage, user.id, imageUrl, replyToId);
             
             setNewMessage('');
             setSelectedImage(null);
+            setReplyingTo(null);
             setShowEmojiPicker(false);
             scrollToBottom();
         } catch (err) {
             console.error('Ошибка отправки:', err);
             setError('Хабарни жўнатишда хатолик');
+        }
+    };
+
+    const addReaction = async (messageId, reactionType) => {
+        try {
+            await forumApi.addReaction(messageId, user.id, reactionType);
+        } catch (err) {
+            console.error('Ошибка добавления реакции:', err);
+        }
+    };
+
+    const removeReaction = async (reactionId) => {
+        try {
+            await forumApi.removeReaction(reactionId);
+        } catch (err) {
+            console.error('Ошибка удаления реакции:', err);
+        }
+    };
+
+    const deleteMessage = async (messageId) => {
+        if (!confirm('Хабарингизни ўчиришни истайсизми?')) return;
+        
+        try {
+            await forumApi.deleteMessage(messageId);
+        } catch (err) {
+            console.error('Ошибка удаления сообщения:', err);
+            setError('Хабарни ўчириб бўлмади');
         }
     };
 
@@ -346,8 +423,32 @@ const ForumPage = () => {
         return groups;
     };
 
+    const ReactionButton = ({ message, type, icon: Icon, color }) => {
+        const userReaction = message.reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
+        const count = message.reactions?.filter(r => r.reaction_type === type).length || 0;
+        
+        if (count === 0 && !userReaction) return null;
+
+        return (
+            <button
+                onClick={() => userReaction 
+                    ? removeReaction(userReaction.id) 
+                    : addReaction(message.id, type)
+                }
+                className={`px-2 py-1 rounded-full flex items-center gap-1 text-xs ${userReaction 
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' 
+                    : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
+                }`}
+            >
+                <Icon className="w-3 h-3" style={{ color }} />
+                {count > 0 && <span>{count}</span>}
+            </button>
+        );
+    };
+
     const MessageItem = ({ message, isOwn }) => {
         const [showActions, setShowActions] = useState(false);
+        const userReaction = message.reactions?.find(r => r.user_id === user?.id);
 
         return (
             <div 
@@ -386,6 +487,32 @@ const ForumPage = () => {
                     )}
 
                     <div className="relative">
+                        {message.reply_to && (
+                            <div className="mb-2 px-3 py-2 bg-gray-800/50 rounded-lg border-l-2 border-blue-500">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-5 h-5 rounded-full overflow-hidden">
+                                        {message.reply_to.profiles?.avatar_url ? (
+                                            <img
+                                                src={message.reply_to.profiles.avatar_url}
+                                                alt=""
+                                                className="w-full h-full object-cover"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                                <User className="w-3 h-3 text-white" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span className="text-sm font-medium text-gray-300">
+                                        {message.reply_to.profiles?.full_name || message.reply_to.profiles?.username || 'Номаълум'}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-gray-400 mt-1 line-clamp-1">
+                                    {message.reply_to.content || 'Расм'}
+                                </p>
+                            </div>
+                        )}
+
                         <div className={`rounded-2xl px-4 py-2 ${isOwn 
                             ? 'bg-blue-500 text-white rounded-br-md' 
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
@@ -411,30 +538,83 @@ const ForumPage = () => {
                                 </p>
                             )}
 
-                            <div className={`flex items-center justify-end gap-1 mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
+                            <div className={`flex items-center justify-between mt-2 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
                                 <span className="text-xs">
                                     {formatMessageTime(message.created_at)}
                                 </span>
                                 {isOwn && (
-                                    <CheckCheck className="w-3 h-3" />
+                                    <div className="flex items-center gap-1">
+                                        <CheckCheck className="w-3 h-3" />
+                                    </div>
                                 )}
                             </div>
                         </div>
+
+                        {/* Реакции */}
+                        {(message.reactions?.length > 0 || showActions) && (
+                            <div className={`flex flex-wrap gap-1 mt-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                                <ReactionButton message={message} type="like" icon={ThumbsUp} color="#3b82f6" />
+                                <ReactionButton message={message} type="heart" icon={Heart} color="#ef4444" />
+                                <ReactionButton message={message} type="laugh" icon={Laugh} color="#f59e0b" />
+                                <ReactionButton message={message} type="sad" icon={Sad} color="#8b5cf6" />
+                                <ReactionButton message={message} type="angry" icon={Angry} color="#dc2626" />
+                                
+                                {showActions && !userReaction && (
+                                    <button
+                                        onClick={() => setShowReactionsPicker(showReactionsPicker === message.id ? null : message.id)}
+                                        className="px-2 py-1 bg-gray-700/50 hover:bg-gray-600/50 text-gray-300 rounded-full text-xs"
+                                    >
+                                        +
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {showReactionsPicker === message.id && (
+                            <div className="absolute top-full left-0 mt-2 bg-gray-800 rounded-full shadow-xl p-1 flex gap-1 z-50">
+                                {[
+                                    { type: 'like', icon: ThumbsUp, color: '#3b82f6' },
+                                    { type: 'heart', icon: Heart, color: '#ef4444' },
+                                    { type: 'laugh', icon: Laugh, color: '#f59e0b' },
+                                    { type: 'sad', icon: Sad, color: '#8b5cf6' },
+                                    { type: 'angry', icon: Angry, color: '#dc2626' }
+                                ].map(({ type, icon: Icon, color }) => (
+                                    <button
+                                        key={type}
+                                        onClick={() => {
+                                            addReaction(message.id, type);
+                                            setShowReactionsPicker(null);
+                                        }}
+                                        className="p-2 hover:bg-gray-700 rounded-full transition-colors"
+                                    >
+                                        <Icon className="w-4 h-4" style={{ color }} />
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
                         {showActions && (
                             <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-1 ${isOwn 
                                 ? '-left-14 flex-row-reverse' 
                                 : '-right-14'
                             }`}>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <Reply className="w-4 h-4" />
+                                <button 
+                                    onClick={() => {
+                                        setReplyingTo(message);
+                                        inputRef.current?.focus();
+                                    }}
+                                    className="p-1.5 bg-gray-800 rounded-full shadow-lg hover:bg-gray-700"
+                                >
+                                    <Reply className="w-4 h-4 text-gray-300" />
                                 </button>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <ThumbsUp className="w-4 h-4" />
-                                </button>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                </button>
+                                {isOwn && (
+                                    <button 
+                                        onClick={() => deleteMessage(message.id)}
+                                        className="p-1.5 bg-gray-800 rounded-full shadow-lg hover:bg-red-500/20"
+                                    >
+                                        <Delete className="w-4 h-4 text-gray-300" />
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>
@@ -453,7 +633,7 @@ const ForumPage = () => {
 
     return (
         <div className="h-screen bg-gray-900 flex flex-col">
-            {/* Шапка как в Telegram */}
+            {/* Шапка чата */}
             <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                     <button className="p-2 rounded-full hover:bg-gray-700 lg:hidden">
@@ -489,9 +669,6 @@ const ForumPage = () => {
                     </button>
                     <button className="p-2 rounded-full hover:bg-gray-700">
                         <Volume2 className="w-5 h-5 text-gray-300" />
-                    </button>
-                    <button className="p-2 rounded-full hover:bg-gray-700">
-                        <MoreVertical className="w-5 h-5 text-gray-300" />
                     </button>
                 </div>
             </div>
@@ -542,20 +719,6 @@ const ForumPage = () => {
                                         </div>
                                     </div>
                                 ))}
-                            </div>
-                        </div>
-
-                        <div className="bg-gray-900/50 rounded-xl p-4">
-                            <h4 className="text-sm font-medium text-gray-300 mb-3">Статистика</h4>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-gray-800 rounded-lg p-3">
-                                    <p className="text-lg font-bold text-white">{onlineUsers.length}</p>
-                                    <p className="text-xs text-gray-400">Онлайн</p>
-                                </div>
-                                <div className="bg-gray-800 rounded-lg p-3">
-                                    <p className="text-lg font-bold text-white">{messages.length}</p>
-                                    <p className="text-xs text-gray-400">Хабарлар</p>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -610,7 +773,36 @@ const ForumPage = () => {
                         )}
                     </div>
 
-                    {/* Панель ввода сообщения (фиксированная внизу) */}
+                    {/* Панель ответа */}
+                    {replyingTo && (
+                        <div className="border-t border-gray-700 bg-gray-800 px-4 py-2 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Reply className="w-4 h-4 text-blue-400" />
+                                <div className="text-sm">
+                                    <span className="text-gray-300">
+                                        {replyingTo.profiles?.full_name || replyingTo.profiles?.username || 'Номаълум'}
+                                    </span>
+                                    <span className="text-gray-400 ml-2">
+                                        {replyingTo.content ? 
+                                            (replyingTo.content.length > 50 ? 
+                                                replyingTo.content.substring(0, 50) + '...' : 
+                                                replyingTo.content
+                                            ) : 
+                                            'Расм'
+                                        }
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setReplyingTo(null)}
+                                className="p-1 hover:bg-gray-700 rounded-full"
+                            >
+                                <X className="w-4 h-4 text-gray-400" />
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Панель ввода сообщения */}
                     <div className="border-t border-gray-700 bg-gray-800">
                         {selectedImage && (
                             <div className="px-4 pt-3">
@@ -625,7 +817,7 @@ const ForumPage = () => {
                                         onClick={() => setSelectedImage(null)}
                                         className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
                                     >
-                                        ×
+                                        <X className="w-3 h-3" />
                                     </button>
                                 </div>
                             </div>
@@ -669,21 +861,16 @@ const ForumPage = () => {
                                     </button>
                                 </div>
 
-                                {newMessage.trim() || selectedImage ? (
-                                    <button
-                                        type="submit"
-                                        className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
-                                    >
-                                        <Send className="w-5 h-5" />
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        className="p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
-                                    >
-                                        <Mic className="w-5 h-5" />
-                                    </button>
-                                )}
+                                <button
+                                    type="submit"
+                                    disabled={!newMessage.trim() && !selectedImage}
+                                    className={`p-3 rounded-full transition-colors shadow-lg ${newMessage.trim() || selectedImage
+                                        ? 'bg-blue-500 text-white hover:bg-blue-600'
+                                        : 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                >
+                                    <Send className="w-5 h-5" />
+                                </button>
                             </div>
 
                             {showEmojiPicker && (

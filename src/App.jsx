@@ -165,9 +165,6 @@ const App = () => {
             }
           />
 
-          {/* УДАЛИ ЭТУ СТРОКУ — больше не нужна отдельная страница теста */}
-          {/* <Route path="/test-creator" element={<TestCreator />} /> */}
-
           {/* 404 — в конце */}
           <Route
             path="*"
