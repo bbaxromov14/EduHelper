@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
 import {
-    Send, User, Users, Clock, MoreVertical, Paperclip, Smile,
-    ThumbsUp, Heart, Laugh, Frown, Angry, 
-    Reply, Trash2, CheckCheck, X
-  } from 'lucide-react';
+  Send, User, Users, Clock, MoreVertical, Paperclip, Smile,
+  ThumbsUp, Heart, Laugh, Frown, Angry, 
+  Reply, Trash2, CheckCheck, X
+} from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -61,7 +61,7 @@ const ForumPage = () => {
           .select(`
             *,
             profiles:user_id (full_name, avatar_url, username),
-            reactions (
+            message_reactions (
               id, user_id, reaction_type,
               profiles:user_id (full_name)
             ),
@@ -101,7 +101,7 @@ const ForumPage = () => {
         setMessages(prev => [...prev, {
           ...newMsg,
           profiles: profile || { full_name: 'Пользователь', avatar_url: null, username: null },
-          reactions: [],
+          message_reactions: [],
           reply_to: null
         }]);
 
@@ -110,14 +110,14 @@ const ForumPage = () => {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reactions' }, (payload) => {
         setMessages(prev => prev.map(msg =>
           msg.id === payload.new.message_id
-            ? { ...msg, reactions: [...(msg.reactions || []), payload.new] }
+            ? { ...msg, message_reactions: [...(msg.message_reactions || []), payload.new] }
             : msg
         ));
       })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'message_reactions' }, (payload) => {
         setMessages(prev => prev.map(msg =>
           msg.id === payload.old.message_id
-            ? { ...msg, reactions: (msg.reactions || []).filter(r => r.id !== payload.old.id) }
+            ? { ...msg, message_reactions: (msg.message_reactions || []).filter(r => r.id !== payload.old.id) }
             : msg
         ));
       })
@@ -165,7 +165,7 @@ const ForumPage = () => {
         .select(`
           *,
           profiles:user_id (full_name, avatar_url, username),
-          reactions (*),
+          message_reactions (*),
           reply_to:reply_to_id (id, content, image_url, profiles:user_id (full_name, username))
         `)
         .lt('created_at', firstMessage.created_at)
@@ -236,9 +236,9 @@ const ForumPage = () => {
     }
   };
 
-  const removeReaction = async (reactionId) => {
+  const removeReaction = async (messageId) => {
     try {
-      await forumApi.removeReaction(reactionId);
+      await forumApi.removeReaction(messageId, user.id);
     } catch (err) {
       console.error('Удаление реакции:', err);
     }
@@ -247,7 +247,7 @@ const ForumPage = () => {
   const deleteMessage = async (messageId) => {
     if (!confirm('Хабарни ўчиришни хоҳлайсизми?')) return;
     try {
-      await forumApi.deleteMessage(messageId);
+      await forumApi.deleteMessage(messageId, user.id);
     } catch (err) {
       console.error('Удаление сообщения:', err);
     }
@@ -320,13 +320,13 @@ const ForumPage = () => {
   };
 
   const ReactionButton = ({ message, type, icon: Icon, color }) => {
-    const userReaction = message.reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
-    const count = message.reactions?.filter(r => r.reaction_type === type).length || 0;
+    const userReaction = message.message_reactions?.find(r => r.user_id === user?.id && r.reaction_type === type);
+    const count = message.message_reactions?.filter(r => r.reaction_type === type).length || 0;
     if (count === 0 && !userReaction) return null;
 
     return (
       <button
-        onClick={() => userReaction ? removeReaction(userReaction.id) : addReaction(message.id, type)}
+        onClick={() => userReaction ? removeReaction(message.id) : addReaction(message.id, type)}
         className={`px-2 py-1 rounded-full flex items-center gap-1 text-xs transition-colors ${
           userReaction ? 'bg-blue-500/30 text-blue-300' : 'bg-gray-700/50 text-gray-300 hover:bg-gray-600/50'
         }`}
