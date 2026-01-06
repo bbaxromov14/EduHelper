@@ -4,7 +4,7 @@ import {
   Send, User, Clock, AlertCircle, Image as ImageIcon, 
   Smile, MoreVertical, Search, Pin, Volume2, Users,
   Paperclip, Mic, ThumbsUp, Reply, Edit, Delete,
-  Check, CheckCheck, MoreHorizontal
+  Check, CheckCheck, MoreHorizontal, LogOut
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -26,6 +26,7 @@ const ForumPage = () => {
     const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
     const [selectedMessage, setSelectedMessage] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [showOnlineUsers, setShowOnlineUsers] = useState(false);
 
     const messagesEndRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -163,7 +164,6 @@ const ForumPage = () => {
             const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 100;
             setIsScrolledToBottom(isBottom);
 
-            // Автоматическая загрузка истории при скролле вверх
             if (scrollTop < 100 && hasMoreMessages && !loadingMore) {
                 loadMoreMessages();
             }
@@ -352,13 +352,13 @@ const ForumPage = () => {
 
         return (
             <div 
-                className={`group relative flex ${isOwn ? 'justify-end' : 'justify-start'} px-4 py-1 hover:bg-black/5 dark:hover:bg-white/5`}
+                className={`group relative flex ${isOwn ? 'justify-end' : 'justify-start'} px-2 md:px-4 py-1 hover:bg-black/5 dark:hover:bg-white/5`}
                 onMouseEnter={() => setShowActions(true)}
                 onMouseLeave={() => setShowActions(false)}
             >
                 {!isOwn && (
-                    <div className="mr-3 mt-1">
-                        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                    <div className="mr-2 md:mr-3 mt-1">
+                        <div className="w-7 h-7 md:w-8 md:h-8 rounded-full overflow-hidden flex-shrink-0">
                             {message.profiles?.avatar_url ? (
                                 <img
                                     src={message.profiles.avatar_url}
@@ -367,74 +367,74 @@ const ForumPage = () => {
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
-                                    <User className="w-4 h-4 text-white" />
+                                    <User className="w-3 h-3 md:w-4 md:h-4 text-white" />
                                 </div>
                             )}
                         </div>
                     </div>
                 )}
 
-                <div className={`max-w-[70%] ${isOwn ? 'order-1' : 'order-2'}`}>
+                <div className={`max-w-[85%] md:max-w-[70%] ${isOwn ? 'order-1' : 'order-2'}`}>
                     {!isOwn && (
-                        <div className="flex items-center gap-2 mb-1 px-2">
-                            <span className="font-medium text-sm text-gray-700 dark:text-gray-300">
+                        <div className="flex items-center gap-1 md:gap-2 mb-1 px-1 md:px-2">
+                            <span className="font-medium text-xs md:text-sm text-gray-700 dark:text-gray-300 truncate">
                                 {message.profiles?.full_name || message.profiles?.username || 'Номаълум'}
                             </span>
-                            <span className="text-xs text-gray-500">
+                            <span className="text-[10px] md:text-xs text-gray-500 whitespace-nowrap">
                                 {formatMessageTime(message.created_at)}
                             </span>
                         </div>
                     )}
 
                     <div className="relative">
-                        <div className={`rounded-2xl px-4 py-2 ${isOwn 
+                        <div className={`rounded-xl md:rounded-2xl px-2 md:px-4 py-1.5 md:py-2 ${isOwn 
                             ? 'bg-blue-500 text-white rounded-br-md' 
                             : 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-bl-md'
                         }`}>
                             {message.image_url && (
-                                <div className="mb-2 -mx-2">
+                                <div className="mb-1 md:mb-2 -mx-1 md:-mx-2">
                                     <img
                                         src={message.image_url}
                                         alt="Илова килинган расм"
-                                        className="rounded-lg max-w-full max-h-96 object-contain"
+                                        className="rounded-lg max-w-full max-h-64 md:max-h-96 object-contain"
                                         onError={(e) => {
                                             e.target.style.display = 'none';
                                             e.target.parentElement.innerHTML = 
-                                                '<div class="p-4 bg-gray-200 dark:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400">Расм юкланмади</div>';
+                                                '<div class="p-2 md:p-4 bg-gray-200 dark:bg-gray-700 rounded-lg text-gray-500 dark:text-gray-400 text-xs md:text-sm">Расм юкланмади</div>';
                                         }}
                                     />
                                 </div>
                             )}
 
                             {message.content && (
-                                <p className="whitespace-pre-wrap break-words">
+                                <p className="whitespace-pre-wrap break-words text-sm md:text-base">
                                     {message.content}
                                 </p>
                             )}
 
-                            <div className={`flex items-center justify-end gap-1 mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
-                                <span className="text-xs">
+                            <div className={`flex items-center justify-end gap-1 mt-0.5 md:mt-1 ${isOwn ? 'text-blue-200' : 'text-gray-500'}`}>
+                                <span className="text-[10px] md:text-xs">
                                     {formatMessageTime(message.created_at)}
                                 </span>
                                 {isOwn && (
-                                    <CheckCheck className="w-3 h-3" />
+                                    <CheckCheck className="w-2.5 h-2.5 md:w-3 md:h-3" />
                                 )}
                             </div>
                         </div>
 
                         {showActions && (
-                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-1 ${isOwn 
-                                ? '-left-14 flex-row-reverse' 
-                                : '-right-14'
+                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-0.5 md:gap-1 ${isOwn 
+                                ? '-left-10 md:-left-14 flex-row-reverse' 
+                                : '-right-10 md:-right-14'
                             }`}>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <Reply className="w-4 h-4" />
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <Reply className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <ThumbsUp className="w-4 h-4" />
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
-                                <button className="p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <MoreHorizontal className="w-4 h-4" />
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <MoreHorizontal className="w-3 h-3 md:w-4 md:h-4" />
                                 </button>
                             </div>
                         )}
@@ -442,9 +442,9 @@ const ForumPage = () => {
                 </div>
 
                 {isOwn && (
-                    <div className="ml-3 mt-1 order-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
-                            <MoreVertical className="w-4 h-4 text-gray-500" />
+                    <div className="ml-1 md:ml-3 mt-1 order-2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
+                        <button className="p-1 md:p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <MoreVertical className="w-3 h-3 md:w-4 md:h-4 text-gray-500" />
                         </button>
                     </div>
                 )}
@@ -454,14 +454,17 @@ const ForumPage = () => {
 
     return (
         <div className="h-screen bg-gray-900 flex flex-col">
-            {/* Шапка как в Telegram */}
-            <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <button className="p-2 rounded-full hover:bg-gray-700 lg:hidden">
+            {/* Шапка */}
+            <div className="bg-gray-800 border-b border-gray-700 px-3 md:px-4 py-2 md:py-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 md:gap-3">
+                    <button 
+                        onClick={() => setShowOnlineUsers(!showOnlineUsers)}
+                        className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 lg:hidden"
+                    >
                         <Users className="w-5 h-5 text-gray-300" />
                     </button>
                     <div className="relative">
-                        <div className="w-10 h-10 rounded-full overflow-hidden">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
                             {onlineUsers[0]?.avatar_url ? (
                                 <img
                                     src={onlineUsers[0].avatar_url}
@@ -470,103 +473,125 @@ const ForumPage = () => {
                                 />
                             ) : (
                                 <div className="w-full h-full bg-gradient-to-br from-green-400 to-blue-500 flex items-center justify-center">
-                                    <Users className="w-5 h-5 text-white" />
+                                    <Users className="w-4 h-4 md:w-5 md:h-5 text-white" />
                                 </div>
                             )}
                         </div>
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-800"></div>
+                        <div className="absolute -bottom-1 -right-1 w-3 h-3 md:w-4 md:h-4 bg-green-500 rounded-full border-2 border-gray-800"></div>
                     </div>
                     <div>
-                        <h1 className="font-semibold text-white">EdduHelper Forum</h1>
+                        <h1 className="font-semibold text-white text-sm md:text-base">EdduHelper Forum</h1>
                         <p className="text-xs text-gray-400">
-                            {onlineUsers.length} фойдаланувчи онлайн
+                            {onlineUsers.length} онлайн
                         </p>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                    <button className="p-2 rounded-full hover:bg-gray-700">
-                        <Search className="w-5 h-5 text-gray-300" />
+                <div className="flex items-center gap-1 md:gap-2">
+                    <button className="p-1.5 md:p-2 rounded-full hover:bg-gray-700">
+                        <Search className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
                     </button>
-                    <button className="p-2 rounded-full hover:bg-gray-700">
-                        <Volume2 className="w-5 h-5 text-gray-300" />
+                    <button className="p-1.5 md:p-2 rounded-full hover:bg-gray-700">
+                        <Volume2 className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
                     </button>
-                    <button className="p-2 rounded-full hover:bg-gray-700">
-                        <MoreVertical className="w-5 h-5 text-gray-300" />
-                    </button>
-                    <NavLink to={"/"} className={"btn btn-error text-white hover:bg-gray-700"} >
-                            Forumdan chiqish
+                    <NavLink 
+                        to={"/"} 
+                        className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 text-gray-300"
+                        title="Forumdan chiqish"
+                    >
+                        {/* На мобильных только иконка, на десктопе текст с иконкой */}
+                        <div className="flex items-center gap-1 md:gap-2">
+                            <LogOut className="w-4 h-4 md:w-5 md:h-5" />
+                            <span className="hidden md:inline text-sm">Чиқиш</span>
+                        </div>
                     </NavLink>
                 </div>
             </div>
 
             {/* Основное содержимое */}
-            <div className="flex flex-1 overflow-hidden w-[100%]">
-                {/* Боковая панель (скрыта на мобильных) */}
-                <div className="hidden lg:block w-80 border-r border-gray-700 bg-gray-800 overflow-y-auto">
-                    <div className="p-4">
-                        <div className="mb-6">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-semibold text-gray-300">Ҳозир онлайн</h3>
-                                <span className="text-xs text-gray-500">{onlineUsers.length}</span>
-                            </div>
-                            <div className="space-y-2">
-                                {onlineUsers.map((onlineUser) => (
-                                    <div
-                                        key={onlineUser.id}
-                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-700"
+            <div className="flex flex-1 overflow-hidden">
+                {/* Боковая панель (скрыта на мобильных, открывается по кнопке) */}
+                {(showOnlineUsers || window.innerWidth >= 1024) && (
+                    <div className={`lg:block ${showOnlineUsers ? 'absolute inset-0 z-50 bg-gray-800' : 'hidden'} lg:relative lg:w-80 lg:inset-auto`}>
+                        <div className="h-full lg:border-r lg:border-gray-700 bg-gray-800 overflow-y-auto">
+                            {/* Кнопка закрытия на мобильных */}
+                            {showOnlineUsers && (
+                                <div className="lg:hidden p-4 border-b border-gray-700 flex justify-between items-center">
+                                    <h2 className="font-semibold text-gray-300">Онлайн фойдаланувчилар</h2>
+                                    <button 
+                                        onClick={() => setShowOnlineUsers(false)}
+                                        className="p-2 rounded-full hover:bg-gray-700"
                                     >
-                                        <div className="relative">
-                                            <div className="w-10 h-10 rounded-full overflow-hidden">
-                                                {onlineUser.avatar_url ? (
-                                                    <img
-                                                        src={onlineUser.avatar_url}
-                                                        alt={onlineUser.full_name}
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                ) : (
-                                                    <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
-                                                        <User className="w-5 h-5 text-white" />
+                                        <span className="text-gray-300 text-xl">×</span>
+                                    </button>
+                                </div>
+                            )}
+                            
+                            <div className="p-3 md:p-4">
+                                <div className="mb-4 md:mb-6">
+                                    <div className="flex items-center justify-between mb-2 md:mb-3">
+                                        <h3 className="font-semibold text-gray-300 text-sm md:text-base">Ҳозир онлайн</h3>
+                                        <span className="text-xs text-gray-500">{onlineUsers.length}</span>
+                                    </div>
+                                    <div className="space-y-1 md:space-y-2">
+                                        {onlineUsers.map((onlineUser) => (
+                                            <div
+                                                key={onlineUser.id}
+                                                className="flex items-center gap-2 md:gap-3 p-1.5 md:p-2 rounded-lg hover:bg-gray-700"
+                                            >
+                                                <div className="relative">
+                                                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden">
+                                                        {onlineUser.avatar_url ? (
+                                                            <img
+                                                                src={onlineUser.avatar_url}
+                                                                alt={onlineUser.full_name}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                                                                <User className="w-4 h-4 md:w-5 md:h-5 text-white" />
+                                                            </div>
+                                                        )}
                                                     </div>
-                                                )}
+                                                    <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 md:w-3 md:h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-xs md:text-sm font-medium text-white truncate">
+                                                        {onlineUser.full_name || onlineUser.email?.split('@')[0]}
+                                                        {onlineUser.id === user?.id && ' (Сиз)'}
+                                                    </p>
+                                                    <p className="text-[10px] md:text-xs text-gray-400">
+                                                        {formatDistanceToNow(new Date(onlineUser.last_seen), { 
+                                                            locale: ru,
+                                                            addSuffix: true 
+                                                        })}
+                                                    </p>
+                                                </div>
                                             </div>
-                                            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-800"></div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900/50 rounded-xl p-3 md:p-4">
+                                    <h4 className="text-xs md:text-sm font-medium text-gray-300 mb-2 md:mb-3">Статистика</h4>
+                                    <div className="grid grid-cols-2 gap-2 md:gap-3">
+                                        <div className="bg-gray-800 rounded-lg p-2 md:p-3">
+                                            <p className="text-base md:text-lg font-bold text-white">{onlineUsers.length}</p>
+                                            <p className="text-[10px] md:text-xs text-gray-400">Онлайн</p>
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-white truncate">
-                                                {onlineUser.full_name || onlineUser.email?.split('@')[0]}
-                                                {onlineUser.id === user?.id && ' (Сиз)'}
-                                            </p>
-                                            <p className="text-xs text-gray-400">
-                                                {formatDistanceToNow(new Date(onlineUser.last_seen), { 
-                                                    locale: ru,
-                                                    addSuffix: true 
-                                                })}
-                                            </p>
+                                        <div className="bg-gray-800 rounded-lg p-2 md:p-3">
+                                            <p className="text-base md:text-lg font-bold text-white">{messages.length}</p>
+                                            <p className="text-[10px] md:text-xs text-gray-400">Хабарлар</p>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="bg-gray-900/50 rounded-xl p-4">
-                            <h4 className="text-sm font-medium text-gray-300 mb-3">Статистика</h4>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="bg-gray-800 rounded-lg p-3">
-                                    <p className="text-lg font-bold text-white">{onlineUsers.length}</p>
-                                    <p className="text-xs text-gray-400">Онлайн</p>
-                                </div>
-                                <div className="bg-gray-800 rounded-lg p-3">
-                                    <p className="text-lg font-bold text-white">{messages.length}</p>
-                                    <p className="text-xs text-gray-400">Хабарлар</p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* Область сообщений */}
-                <div className="flex-1 flex flex-col">
+                <div className={`flex-1 flex flex-col ${showOnlineUsers ? 'hidden lg:flex' : 'flex'}`}>
                     {/* Сообщения */}
                     <div 
                         ref={messagesContainerRef}
@@ -577,26 +602,26 @@ const ForumPage = () => {
                     >
                         {loading ? (
                             <div className="flex justify-center items-center h-full">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                                <div className="animate-spin rounded-full h-10 w-10 md:h-12 md:w-12 border-b-2 border-blue-500"></div>
                             </div>
                         ) : messages.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                                <Send className="w-16 h-16 mb-4 opacity-50" />
-                                <p className="text-xl text-gray-400">Биринчи бўлиб ёзинг!</p>
-                                <p className="text-sm mt-2 text-gray-500">Хабар ёзиб, жўнатинг</p>
+                            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-4">
+                                <Send className="w-12 h-12 md:w-16 md:h-16 mb-3 md:mb-4 opacity-50" />
+                                <p className="text-base md:text-xl text-gray-400 text-center">Биринчи бўлиб ёзинг!</p>
+                                <p className="text-xs md:text-sm mt-1 md:mt-2 text-gray-500 text-center">Хабар ёзиб, жўнатинг</p>
                             </div>
                         ) : (
                             <>
                                 {loadingMore && (
-                                    <div className="flex justify-center py-4">
-                                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                                    <div className="flex justify-center py-3 md:py-4">
+                                        <div className="animate-spin rounded-full h-5 w-5 md:h-6 md:w-6 border-b-2 border-blue-500"></div>
                                     </div>
                                 )}
 
                                 {groupMessagesByDate().map((group, groupIndex) => (
                                     <div key={groupIndex}>
-                                        <div className="sticky top-2 z-10 flex justify-center my-4">
-                                            <div className="bg-gray-700/90 backdrop-blur-sm text-gray-300 text-xs px-3 py-1.5 rounded-full">
+                                        <div className="sticky top-1 md:top-2 z-10 flex justify-center my-2 md:my-4">
+                                            <div className="bg-gray-700/90 backdrop-blur-sm text-gray-300 text-xs px-2 py-1 md:px-3 md:py-1.5 rounded-full">
                                                 {group.date}
                                             </div>
                                         </div>
@@ -614,20 +639,20 @@ const ForumPage = () => {
                         )}
                     </div>
 
-                    {/* Панель ввода сообщения (фиксированная внизу) */}
+                    {/* Панель ввода сообщения */}
                     <div className="border-t border-gray-700 bg-gray-800">
                         {selectedImage && (
-                            <div className="px-4 pt-3">
+                            <div className="px-3 md:px-4 pt-2 md:pt-3">
                                 <div className="relative inline-block">
                                     <img
                                         src={selectedImage}
                                         alt="Кўриб чиқиш"
-                                        className="rounded-lg max-h-32"
+                                        className="rounded-lg max-h-24 md:max-h-32"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setSelectedImage(null)}
-                                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                                        className="absolute -top-1.5 -right-1.5 md:-top-2 md:-right-2 bg-red-500 text-white rounded-full w-5 h-5 md:w-6 md:h-6 flex items-center justify-center hover:bg-red-600 text-xs md:text-base"
                                     >
                                         ×
                                     </button>
@@ -635,14 +660,15 @@ const ForumPage = () => {
                             </div>
                         )}
 
-                        <form onSubmit={sendMessage} className="p-4 relative">
-                            <div className="flex items-center gap-2">
+                        <form onSubmit={sendMessage} className="p-3 md:p-4 relative">
+                            <div className="flex items-center gap-1 md:gap-2">
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current.click()}
-                                    className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                    className="p-1.5 md:p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                    title="Расм юклаш"
                                 >
-                                    <Paperclip className="w-5 h-5" />
+                                    <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
                                 </button>
 
                                 <input
@@ -660,44 +686,49 @@ const ForumPage = () => {
                                         value={newMessage}
                                         onChange={(e) => setNewMessage(e.target.value)}
                                         placeholder="Хабарингизни ёзинг..."
-                                        className="w-full px-4 py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
+                                        className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-700 text-white rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 text-sm md:text-base"
                                         onFocus={() => setShowEmojiPicker(false)}
                                     />
                                     
                                     <button
                                         type="button"
                                         onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                                        className="absolute right-2 md:right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white"
+                                        title="Эмоциялар"
                                     >
-                                        <Smile className="w-5 h-5" />
+                                        <Smile className="w-4 h-4 md:w-5 md:h-5" />
                                     </button>
                                 </div>
 
                                 {newMessage.trim() || selectedImage ? (
                                     <button
                                         type="submit"
-                                        className="p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
+                                        className="p-2 md:p-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors shadow-lg"
+                                        title="Жўнатиш"
                                     >
-                                        <Send className="w-5 h-5" />
+                                        <Send className="w-4 h-4 md:w-5 md:h-5" />
                                     </button>
                                 ) : (
                                     <button
                                         type="button"
-                                        className="p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                        className="p-2 md:p-3 text-gray-400 hover:text-white hover:bg-gray-700 rounded-full transition-colors"
+                                        title="Овозли хабар"
                                     >
-                                        <Mic className="w-5 h-5" />
+                                        <Mic className="w-4 h-4 md:w-5 md:h-5" />
                                     </button>
                                 )}
                             </div>
 
                             {showEmojiPicker && (
-                                <div className="absolute bottom-20 left-4 z-50">
+                                <div className="absolute bottom-16 md:bottom-20 left-2 md:left-4 z-50">
                                     <div className="relative">
                                         <EmojiPicker
                                             onEmojiClick={handleEmojiClick}
                                             previewConfig={{ showPreview: false }}
                                             skinTonesDisabled
                                             searchDisabled={false}
+                                            width={window.innerWidth < 768 ? 280 : 350}
+                                            height={400}
                                         />
                                     </div>
                                 </div>
@@ -711,9 +742,10 @@ const ForumPage = () => {
             {!isScrolledToBottom && (
                 <button
                     onClick={scrollToBottom}
-                    className="fixed bottom-24 right-4 p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-colors z-50"
+                    className="fixed bottom-20 md:bottom-24 right-3 md:right-4 p-2.5 md:p-3 bg-blue-500 text-white rounded-full shadow-lg hover:bg-blue-600 transition-colors z-40"
+                    title="Охирга ўтиш"
                 >
-                    <Send className="w-5 h-5 rotate-45" />
+                    <Send className="w-4 h-4 md:w-5 md:h-5 rotate-45" />
                 </button>
             )}
         </div>
