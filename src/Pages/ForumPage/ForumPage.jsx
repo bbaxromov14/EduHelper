@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { ru } from 'date-fns/locale';
 import { NavLink } from 'react-router-dom';
 
 const ForumPage = () => {
@@ -304,21 +303,42 @@ const ForumPage = () => {
         return format(new Date(date), 'HH:mm');
     };
 
+    const uzLocale = {
+        months: [
+            'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+            'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr'
+        ],
+        monthsShort: [
+            'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn',
+            'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'
+        ],
+        weekdays: [
+            'Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba',
+            'Payshanba', 'Juma', 'Shanba'
+        ],
+        weekdaysShort: ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan']
+    };
+
     const formatDateHeader = (date) => {
         const messageDate = new Date(date);
         const today = new Date();
 
         if (messageDate.toDateString() === today.toDateString()) {
-            return 'Бугун';
+            return 'Bugun';
         }
 
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         if (messageDate.toDateString() === yesterday.toDateString()) {
-            return 'Кеча';
+            return 'Kecha';
         }
 
-        return format(messageDate, 'd MMMM yyyy', { locale: ru });
+        // Своя функция форматирования
+        const day = messageDate.getDate();
+        const monthIndex = messageDate.getMonth();
+        const year = messageDate.getFullYear();
+
+        return `${day} ${uzLocale.months[monthIndex]} ${year}`;
     };
 
     const groupMessagesByDate = () => {
@@ -482,7 +502,7 @@ const ForumPage = () => {
                     <div>
                         <h1 className="font-semibold text-white text-sm md:text-base">EdduHelper Forum</h1>
                         <p className="text-xs text-gray-400">
-                            {onlineUsers.length} онлайн
+                            {onlineUsers.length} Online
                         </p>
                     </div>
                 </div>
@@ -530,7 +550,7 @@ const ForumPage = () => {
                             <div className="p-3 md:p-4">
                                 <div className="mb-4 md:mb-6">
                                     <div className="flex items-center justify-between mb-2 md:mb-3">
-                                        <h3 className="font-semibold text-gray-300 text-sm md:text-base">Ҳозир онлайн</h3>
+                                        <h3 className="font-semibold text-gray-300 text-sm md:text-base">Hozir Online</h3>
                                         <span className="text-xs text-gray-500">{onlineUsers.length}</span>
                                     </div>
                                     <div className="space-y-1 md:space-y-2">
@@ -603,15 +623,15 @@ const ForumPage = () => {
                                 </div>
 
                                 <div className="bg-gray-900/50 rounded-xl p-3 md:p-4">
-                                    <h4 className="text-xs md:text-sm font-medium text-gray-300 mb-2 md:mb-3">Статистика</h4>
+                                    <h4 className="text-xs md:text-sm font-medium text-gray-300 mb-2 md:mb-3">Statistika</h4>
                                     <div className="grid grid-cols-2 gap-2 md:gap-3">
                                         <div className="bg-gray-800 rounded-lg p-2 md:p-3">
                                             <p className="text-base md:text-lg font-bold text-white">{onlineUsers.length}</p>
-                                            <p className="text-[10px] md:text-xs text-gray-400">Онлайн</p>
+                                            <p className="text-[10px] md:text-xs text-gray-400">Online</p>
                                         </div>
                                         <div className="bg-gray-800 rounded-lg p-2 md:p-3">
                                             <p className="text-base md:text-lg font-bold text-white">{messages.length}</p>
-                                            <p className="text-[10px] md:text-xs text-gray-400">Хабарлар</p>
+                                            <p className="text-[10px] md:text-xs text-gray-400">Xabarlar</p>
                                         </div>
                                     </div>
                                 </div>
