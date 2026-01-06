@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase, forumApi } from '../../lib/supabase';
 import {
-    Send, User, Clock, MoreVertical, Paperclip, Smile,
+    Send, User, Users, Clock, MoreVertical, Paperclip, Smile,
     ThumbsUp, Heart, Laugh, Frown, Angry, 
     Reply, Trash2, CheckCheck, X
   } from 'lucide-react';
