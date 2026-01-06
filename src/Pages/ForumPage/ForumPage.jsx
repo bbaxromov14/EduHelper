@@ -494,7 +494,7 @@ const ForumPage = () => {
                     <button className="p-2 rounded-full hover:bg-gray-700">
                         <MoreVertical className="w-5 h-5 text-gray-300" />
                     </button>
-                    <NavLink to={"/"} className={"btn btn-error text-gray-300 hover:bg-gray-700"} >
+                    <NavLink to={"/"} className={"btn btn-error text-white hover:bg-gray-700"} >
                             Forumdan chiqish
                     </NavLink>
                 </div>

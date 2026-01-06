@@ -6,24 +6,24 @@ import { supabase } from '../../lib/supabase'; // Заменили Firebase на
 
 // Хук для отслеживания размера окна
 const useWindowSize = () => {
-  const [windowSize, setWindowSize] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-
-  useEffect(() => {
-    const handleResize = () => {
-      setWindowSize({
+    const [windowSize, setWindowSize] = useState({
         width: window.innerWidth,
         height: window.innerHeight,
-      });
-    };
+    });
 
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowSize({
+                width: window.innerWidth,
+                height: window.innerHeight,
+            });
+        };
 
-  return windowSize;
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    return windowSize;
 };
 
 const Navbar = () => {
@@ -41,17 +41,17 @@ const Navbar = () => {
         // Подписка на изменения профиля пользователя
         const channel = supabase
             .channel('user-profile-changes')
-            .on('postgres_changes', 
-                { 
-                    event: '*', 
-                    schema: 'public', 
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
                     table: 'profiles',
                     filter: `id=eq.${user.id}`
-                }, 
+                },
                 (payload) => {
                     const data = payload.new;
                     setUserData(data);
-                    
+
                     // Проверяем премиум статус
                     if (data.premium_until) {
                         const premiumUntil = new Date(data.premium_until);
@@ -60,7 +60,7 @@ const Navbar = () => {
                     } else {
                         setIsPremium(false);
                     }
-                    
+
                     // Устанавливаем тему из настроек пользователя
                     if (data.theme_preference) {
                         const isDark = data.theme_preference === "dark";
@@ -79,19 +79,19 @@ const Navbar = () => {
                     .select('*')
                     .eq('id', user.id)
                     .single();
-                
+
                 if (error) throw error;
-                
+
                 if (data) {
                     setUserData(data);
-                    
+
                     // Проверяем премиум статус
                     if (data.premium_until) {
                         const premiumUntil = new Date(data.premium_until);
                         const now = new Date();
                         setIsPremium(premiumUntil > now);
                     }
-                    
+
                     // Устанавливаем тему
                     if (data.theme_preference) {
                         const isDark = data.theme_preference === "dark";
@@ -129,18 +129,18 @@ const Navbar = () => {
         const newMode = !nightMode;
         setNightMode(newMode);
         applyTheme(newMode);
-        
+
         // Сохраняем в Supabase если пользователь авторизован
         if (user?.id) {
             try {
                 const { error } = await supabase
                     .from('profiles')
-                    .update({ 
+                    .update({
                         theme_preference: newMode ? "dark" : "light",
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', user.id);
-                
+
                 if (error) throw error;
             } catch (error) {
                 console.error("Ошибка сохранения темы:", error);
@@ -168,7 +168,7 @@ const Navbar = () => {
             // Проверяем localStorage для неавторизованных или новых пользователей
             const savedTheme = localStorage.getItem("theme");
             const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            
+
             const isDark = savedTheme === "dark" || (!savedTheme && prefersDark);
             setNightMode(isDark);
             applyTheme(isDark);
@@ -205,9 +205,9 @@ const Navbar = () => {
                 {/* ДЕСКТОПНОЕ МЕНЮ — В ЦЕНТРЕ */}
                 <div className="hidden lg:flex flex-1 justify-center font-light font-sans">
                     {items.map(item => (
-                        <NavLink 
+                        <NavLink
                             key={item.path}
-                            to={item.path} 
+                            to={item.path}
                             className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
                         >
                             {item.title}
@@ -241,8 +241,8 @@ const Navbar = () => {
                         onClick={toggleNightMode}
                         aria-label={nightMode ? "Switch to light mode" : "Switch to dark mode"}
                     >
-                        {nightMode ? 
-                            <span className="text-yellow-400 text-sm sm:text-base" aria-hidden="true">☀️</span> : 
+                        {nightMode ?
+                            <span className="text-yellow-400 text-sm sm:text-base" aria-hidden="true">☀️</span> :
                             <span className="text-gray-700 text-sm sm:text-base" aria-hidden="true">🌙</span>
                         }
                     </button>
@@ -270,7 +270,7 @@ const Navbar = () => {
                             <ul tabIndex={0} className="dropdown-content menu bg-base-100 dark:bg-gray-800 rounded-box z-[1] w-48 sm:w-52 p-2 shadow">
                                 <li><NavLink to="/profile" className="text-sm sm:text-base">Profile</NavLink></li>
                                 <li><NavLink to="/achievements" className="text-sm sm:text-base">Achievements</NavLink></li>
-                                
+
                                 {/* Кнопка апгрейда для обычных пользователей */}
                                 {!isPremium && (
                                     <li>
@@ -279,9 +279,9 @@ const Navbar = () => {
                                         </NavLink>
                                     </li>
                                 )}
-                                
+
                                 <li><NavLink to="/settings" className="text-sm sm:text-base">Settings</NavLink></li>
-                                <li><NavLink to="/referrals" className="text-sm sm:text-base">Referral</NavLink></li>                                
+                                <li><NavLink to="/referrals" className="text-sm sm:text-base">Referral</NavLink></li>
                                 <li><button className="btn btn-error btn-sm sm:btn-md mt-2" onClick={handleLogout}>Logout</button></li>
                             </ul>
                         </div>
@@ -313,38 +313,45 @@ const Navbar = () => {
                 <div className="lg:hidden bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
                     <div className="flex flex-col items-center py-3 sm:py-4 space-y-2 sm:space-y-3 font-light font-sans">
                         {items.map(item => (
-                            <NavLink 
+                            <NavLink
                                 key={item.path}
-                                to={item.path} 
-                                onClick={() => setMobileMenuOpen(false)} 
+                                to={item.path}
+                                onClick={() => setMobileMenuOpen(false)}
                                 className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                             >
                                 {item.title}
                             </NavLink>
                         ))}
-                        
-                            <NavLink 
-                                to="/forum" 
-                                onClick={() => setMobileMenuOpen(false)} 
-                                className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
-                            >
-                                Forum
-                            </NavLink>
-                            
+
+
+                        <NavLink
+                            to="/forum"
+                            className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
+                        >
+                            Forum
+                        </NavLink>
+                        <NavLink
+                            to="/forum"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
+                        >
+                            Forum
+                        </NavLink>
+
                         {/* Донат в мобильном меню */}
-                        <NavLink 
-                            to="/donate" 
-                            onClick={() => setMobileMenuOpen(false)} 
+                        <NavLink
+                            to="/donate"
+                            onClick={() => setMobileMenuOpen(false)}
                             className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                         >
                             🎁 Donate
                         </NavLink>
-                        
+
                         {/* Кнопка апгрейда в мобильном меню */}
                         {!isPremium && isAuthenticated && (
-                            <NavLink 
-                                to="/premium" 
-                                onClick={() => setMobileMenuOpen(false)} 
+                            <NavLink
+                                to="/premium"
+                                onClick={() => setMobileMenuOpen(false)}
                                 className="text-lg sm:text-xl bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 font-bold py-2 px-4 rounded-full"
                             >
                                 ⭐ Upgrade to Premium
