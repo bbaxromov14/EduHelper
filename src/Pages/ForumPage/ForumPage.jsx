@@ -441,8 +441,10 @@ const ForumPage = () => {
                                 )}
                             </div>
                         </div>
+
                     </div>
                 </div>
+
             </div>
         );
     };
