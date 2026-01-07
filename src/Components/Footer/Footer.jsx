@@ -260,6 +260,7 @@ const Footer = () => {
                 { name: 'Progress', path: '/progress' },
                 { name: 'Achievements', path: '/achievements' },
                 { name: 'Premium', path: '/premium' }
+                { name: 'Support', path: '/support' }
               ].map((item) => (
                 <NavLink
                   key={item.path}
