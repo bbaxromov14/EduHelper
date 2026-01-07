@@ -442,9 +442,32 @@ const ForumPage = () => {
                             </div>
                         </div>
 
+                        {showActions && (
+                            <div className={`absolute top-1/2 transform -translate-y-1/2 flex items-center gap-0.5 md:gap-1 ${isOwn
+                                ? '-left-10 md:-left-14 flex-row-reverse'
+                                : '-right-10 md:-right-14'
+                                }`}>
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <Reply className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <ThumbsUp className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
+                                <button className="p-1 md:p-1.5 bg-white dark:bg-gray-800 rounded-full shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <MoreHorizontal className="w-3 h-3 md:w-4 md:h-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
+                {isOwn && (
+                    <div className="ml-1 md:ml-3 mt-1 order-2 opacity-0 group-hover:opacity-100 transition-opacity hidden md:block">
+                        <button className="p-1 md:p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                            <MoreVertical className="w-3 h-3 md:w-4 md:h-4 text-gray-500" />
+                        </button>
+                    </div>
+                )}
             </div>
         );
     };
@@ -485,6 +508,12 @@ const ForumPage = () => {
                 </div>
 
                 <div className="flex items-center gap-1 md:gap-2">
+                    <button className="p-1.5 md:p-2 rounded-full hover:bg-gray-700">
+                        <Search className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
+                    </button>
+                    <button className="p-1.5 md:p-2 rounded-full hover:bg-gray-700">
+                        <Volume2 className="w-4 h-4 md:w-5 md:h-5 text-gray-300" />
+                    </button>
                     <NavLink
                         to={"/"}
                         className="p-1.5 md:p-2 rounded-full hover:bg-gray-700 text-gray-300"
@@ -499,10 +528,13 @@ const ForumPage = () => {
                 </div>
             </div>
 
+            {/* Основное содержимое */}
             <div className="flex flex-1 overflow-hidden">
+                {/* Боковая панель (скрыта на мобильных, открывается по кнопке) */}
                 {(showOnlineUsers || window.innerWidth >= 1024) && (
                     <div className={`lg:block ${showOnlineUsers ? 'absolute inset-0 z-50 bg-gray-800' : 'hidden'} lg:relative lg:w-80 lg:inset-auto`}>
                         <div className="h-full lg:border-r lg:border-gray-700 bg-gray-800 overflow-y-auto">
+                            {/* Кнопка закрытия на мобильных */}
                             {showOnlineUsers && (
                                 <div className="lg:hidden p-4 border-b border-gray-700 flex justify-between items-center">
                                     <h2 className="font-semibold text-gray-300">Онлайн фойдаланувчилар</h2>
