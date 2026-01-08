@@ -21,6 +21,7 @@ import Achievements from './Pages/Achievements/Achievements.jsx'
 import SitePage from './Components/SitePage/SitePage.jsx'
 import Referrals from './Pages/Referrals/Referrals.jsx'
 import ForumPage from './Pages/ForumPage/ForumPage.jsx'
+import Settings from './Pages/Settings/Settings.jsx'
 
 // УДАЛИ ЭТУ СТРОКУ — больше не нужна отдельная страница
 // import TestCreator from './Components/TestCreator/TestCreator.jsx'
@@ -154,6 +155,7 @@ const App = () => {
           <Route path="/page/:slug" element={<SitePage />} />
           <Route path="/referrals" element={<Referrals />} />
           <Route path="/forum" element={<ForumPage />} />
+          <Route path="/settings" element={<Settings />} />
 
           {/* КЛЮЧЕВОЙ РОУТ — управление уроками (доступ только админу) */}
           <Route
