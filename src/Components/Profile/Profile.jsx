@@ -202,7 +202,7 @@ const Profile = () => {
         const oldLvl = Math.max(1, Math.floor((totalPoints || 0) / 100) + 1);
         setOldLevel(oldLvl);
 
-        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ
+        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ С ИМЕНАМИ
         const { data: globalRanking, error: rankingError } = await supabase
           .rpc('get_global_ranking');
 
@@ -213,10 +213,27 @@ const Profile = () => {
           globalRanking.forEach(userRank => {
             if (!seenUsers.has(userRank.user_uuid)) {
               seenUsers.add(userRank.user_uuid);
+
+              // Определяем отображаемое имя
+              let displayName = '';
+
+              if (userRank.user_full_name && userRank.user_full_name.trim()) {
+                // Используем полное имя если есть
+                displayName = userRank.user_full_name;
+              } else if (userRank.user_username && userRank.user_username.trim()) {
+                // Или username если есть
+                displayName = userRank.user_username;
+              } else {
+                // Или первую часть email
+                displayName = userRank.user_email?.split('@')[0] || t('user_default');
+              }
+
               uniqueUsers.push({
                 id: userRank.user_uuid,
                 email: userRank.user_email,
                 fullName: userRank.user_full_name,
+                username: userRank.user_username,
+                displayName: displayName, // Добавляем отображаемое имя
                 points: userRank.total_points,
                 level: userRank.user_level,
                 rank: userRank.ranking
@@ -228,25 +245,41 @@ const Profile = () => {
           const myRank = uniqueUsers.findIndex(u => u.id === user.id) + 1;
           setMyRank(myRank > 0 ? myRank : null);
         } else {
+          // Fallback запрос с загрузкой имен из profiles
           const { data: fallbackRanking } = await supabase
             .from('user_progress')
             .select(`
-              user_id, 
-              points,
-              profiles!inner(email, full_name)
-            `)
+    user_id, 
+    points,
+    profiles!inner(email, full_name, username)
+  `)
             .order('points', { ascending: false })
             .limit(10);
 
           if (fallbackRanking && fallbackRanking.length > 0) {
-            const users = fallbackRanking.map((u, index) => ({
-              id: u.user_id,
-              email: u.profiles?.email || 'anonymous',
-              fullName: u.profiles?.full_name || 'User',
-              points: u.points || 0,
-              level: Math.max(1, Math.floor((u.points || 0) / 100) + 1),
-              rank: index + 1
-            }));
+            const users = fallbackRanking.map((u, index) => {
+              // Определяем отображаемое имя
+              let displayName = '';
+
+              if (u.profiles?.full_name && u.profiles.full_name.trim()) {
+                displayName = u.profiles.full_name;
+              } else if (u.profiles?.username && u.profiles.username.trim()) {
+                displayName = u.profiles.username;
+              } else {
+                displayName = u.profiles?.email?.split('@')[0] || t('user_default');
+              }
+
+              return {
+                id: u.user_id,
+                email: u.profiles?.email || 'anonymous',
+                fullName: u.profiles?.full_name,
+                username: u.profiles?.username,
+                displayName: displayName, // Добавляем отображаемое имя
+                points: u.points || 0,
+                level: Math.max(1, Math.floor((u.points || 0) / 100) + 1),
+                rank: index + 1
+              };
+            });
 
             setAllUsers(users);
             const myRank = users.findIndex(u => u.id === user.id) + 1;
@@ -484,9 +517,9 @@ const Profile = () => {
                     label: t('points'),
                     icon: "⭐",
                     gradient: true,
-                    tooltip: t('total_points_tooltip', { 
-                      progress: stats.progressPoints, 
-                      test: stats.testPoints 
+                    tooltip: t('total_points_tooltip', {
+                      progress: stats.progressPoints,
+                      test: stats.testPoints
                     })
                   },
                   {
@@ -566,11 +599,12 @@ const Profile = () => {
                       {i > 2 && `${i + 1}`}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="font-bold truncate text-xs sm:text-sm md:text-base">
-                        {u.email?.split('@')[0] || t('user_default')}
+                      {/* ИСПОЛЬЗУЕМ displayName ВМЕСТО email */}
+                      <div className="font-bold truncate text-xs sm:text-sm md:text-base" title={u.displayName}>
+                        {u.displayName}
                       </div>
                       <div className="text-cyan-300 text-[10px] sm:text-xs">
-                        L{Math.max(1, Math.floor((u.points || 0) / 100) + 1)}
+                        L{u.level}
                       </div>
                     </div>
                   </div>
