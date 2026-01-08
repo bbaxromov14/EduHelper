@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
-import { supabase } from '../../lib/supabase'; // Ваш файл с настройкой Supabase
+import { useTranslation } from 'react-i18next';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 
 const ACTIVE_THRESHOLD = 60 * 1000; // 1 минута неактивности = оффлайн
 const UPDATE_INTERVAL = 30 * 1000;  // обновляем каждые 30 сек
 
 const ActiveStudents = () => {
+  const { t } = useTranslation();
   const [activeCount, setActiveCount] = useState(0);
   const [isOnline, setIsOnline] = useState(true);
   const { user, isAuthenticated } = useAuth();
@@ -22,7 +24,7 @@ const ActiveStudents = () => {
           id: user.id,
           uid: user.id,
           email: user.email,
-          full_name: user.user_metadata?.full_name || 'User',
+          full_name: user.user_metadata?.full_name || t('user_default_name') || 'User',
           last_activity: Date.now(),
           session_id: sessionId.current,
           updated_at: new Date().toISOString(),
@@ -32,7 +34,7 @@ const ActiveStudents = () => {
       if (error) throw error;
       setIsOnline(true);
     } catch (error) {
-      console.error("Ошибка обновления активности:", error);
+      console.error(t('activity_update_error') || "Ошибка обновления активности:", error);
       setIsOnline(false);
     }
   };
@@ -49,7 +51,7 @@ const ActiveStudents = () => {
 
       if (error) throw error;
     } catch (error) {
-      console.error("Ошибка удаления активности:", error);
+      console.error(t('activity_remove_error') || "Ошибка удаления активности:", error);
     }
   };
 
@@ -119,7 +121,7 @@ const ActiveStudents = () => {
         window.removeEventListener(event, handleUserActivity);
       });
     };
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, t]);
 
   // Автоматическая очистка устаревших записей (раз в 5 минут)
   useEffect(() => {
@@ -148,7 +150,7 @@ const ActiveStudents = () => {
           }
         }
       } catch (error) {
-        console.error("Ошибка очистки устаревших записей:", error);
+        console.error(t('cleanup_error') || "Ошибка очистки устаревших записей:", error);
       }
     };
 
@@ -156,11 +158,21 @@ const ActiveStudents = () => {
     const cleanupInterval = setInterval(cleanupOldEntries, 5 * 60 * 1000);
 
     return () => clearInterval(cleanupInterval);
-  }, []);
+  }, [t]);
+
+  // Функция для получения правильного текста описания
+  const getDescriptionText = () => {
+    if (activeCount > 1) {
+      return t('multiple_students_online', { count: activeCount }) || `${activeCount} students currently online`;
+    } else if (activeCount === 1) {
+      return t('only_you_online') || "You are the only one online";
+    } else {
+      return t('loading_online_users') || "Loading online users...";
+    }
+  };
 
   return (
     <div className="stat">
-      {/* Ваш JSX остается без изменений */}
       <div className="stat-figure text-primary">
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -178,7 +190,7 @@ const ActiveStudents = () => {
       </div>
 
       <div className="stat-title text-gray-600 dark:text-gray-300">
-        Active Students
+        {t('active_students')}
         {isOnline && (
           <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
         )}
@@ -189,11 +201,7 @@ const ActiveStudents = () => {
       </div>
 
       <div className="stat-desc text-gray-500 dark:text-gray-400">
-        {activeCount > 1
-          ? `${activeCount} students currently online`
-          : activeCount === 1
-            ? "You are the only one online"
-            : "Loading online users..."}
+        {getDescriptionText()}
       </div>
     </div>
   );
