@@ -1,36 +1,37 @@
+// Utils/Utils.js
 import Home from "../Pages/Home/Home.jsx";
 import Login from "../Pages/Login/Login.jsx";
 import Progress from "../Pages/Progress/Progress.jsx";
 import Subjects from "../Pages/Subjects/Subjects.jsx";
 import About from "../Pages/About/About.jsx";
 import ForumPage from "../Pages/ForumPage/ForumPage.jsx";
-// УБЕРИТЕ импорт Subject отсюда, если он есть
 
+// Создаем массив с ключами переводов вместо статичного текста
 let items = [
     {
         id: 1,
-        title: "Home",
+        title: "home", // Ключ перевода, а не текст
         path: "/",
         element: <Home />
     },
     {
         id: 2,
-        title: "Subjects",
+        title: "subjects", // Ключ перевода
         path: "subjects",
         element: <Subjects />
     },
     {
         id: 3, 
-        title: "Progress",
+        title: "progress", // Ключ перевода
         path: "progress",
         element: <Progress />
     },
     {
         id: 4,
-        title: "About",
+        title: "about", // Ключ перевода
         path: "about", 
         element: <About />
     },
 ]
 
-export default items
+export default items;

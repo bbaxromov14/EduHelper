@@ -188,19 +188,6 @@ const Navbar = () => {
         }
     };
 
-    // Функция для получения переведенного названия пункта меню
-    const getTranslatedTitle = (title) => {
-        const translations = {
-            'Home': t('home'),
-            'Courses': t('courses'),
-            'Teachers': t('teachers'),
-            'Forum': t('forum'),
-            'Donate': t('donate'),
-            'Support': t('support')
-        };
-        return translations[title] || title;
-    };
-
     return (
         <div className='bg-white dark:bg-gray-800 shadow-[0_3px_5px_#D7E3E7] dark:shadow-gray-900 relative z-50'>
             <div className="navbar flex justify-between px-4 sm:px-6 md:px-8 lg:px-10 bg-base-100 dark:bg-gray-800">
@@ -221,13 +208,14 @@ const Navbar = () => {
                 <div className="hidden lg:flex flex-1 justify-center font-light font-sans">
                     {items.map(item => (
                         <NavLink
-                            key={item.path}
+                            key={item.id}
                             to={item.path}
                             className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
                         >
-                            {getTranslatedTitle(item.title)}
+                            {t(item.title)}
                         </NavLink>
                     ))}
+                    {/* Форум отдельно */}
                     <NavLink
                         to="/forum"
                         className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
@@ -335,15 +323,16 @@ const Navbar = () => {
                     <div className="flex flex-col items-center py-3 sm:py-4 space-y-2 sm:space-y-3 font-light font-sans">
                         {items.map(item => (
                             <NavLink
-                                key={item.path}
+                                key={item.id}
                                 to={item.path}
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                             >
-                                {getTranslatedTitle(item.title)}
+                                {t(item.title)}
                             </NavLink>
                         ))}
 
+                        {/* Форум в мобильном меню */}
                         <NavLink
                             to="/forum"
                             onClick={() => setMobileMenuOpen(false)}
