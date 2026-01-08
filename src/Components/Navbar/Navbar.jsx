@@ -261,15 +261,37 @@ const Navbar = () => {
                         <div className="dropdown dropdown-end">
                             <div tabIndex={0} role="button" className="flex items-center gap-1 sm:gap-2 p-1 sm:p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
                                 <div className="avatar placeholder relative">
+                                    {/* Показываем фото профиля если оно есть */}
+                                    {userData?.avatar_url ? (
+                                        <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full overflow-hidden border-2 border-white dark:border-gray-700">
+                                            <img
+                                                src={userData.avatar_url}
+                                                alt={userName}
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {
+                                                    // Если изображение не загружается, показываем инициалы
+                                                    e.target.style.display = 'none';
+                                                    const parent = e.target.parentNode;
+                                                    const fallback = document.createElement('div');
+                                                    fallback.className = 'w-full h-full flex justify-center items-center bg-gradient-to-r from-[#0AB685] to-[#1855D4] text-white';
+                                                    fallback.textContent = userName?.charAt(0).toUpperCase() || t('user_default').charAt(0).toUpperCase();
+                                                    parent.appendChild(fallback);
+                                                }}
+                                            />
+                                        </div>
+                                    ) : (
+                                        // Или показываем инициалы если фото нет
+                                        <div className="flex justify-center items-center bg-gradient-to-r from-[#0AB685] to-[#1855D4] text-white rounded-full w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10">
+                                            <span className="text-sm font-bold">
+                                                {userName?.charAt(0).toUpperCase() || t('user_default').charAt(0).toUpperCase()}
+                                            </span>
+                                        </div>
+                                    )}
+
                                     {/* Премиум индикатор */}
                                     {isPremium && (
-                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full border-2 border-white dark:border-gray-800"></div>
+                                        <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full border-2 border-white dark:border-gray-800 z-10"></div>
                                     )}
-                                    <div className="flex justify-center items-center bg-gradient-to-r from-[#0AB685] to-[#1855D4] text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8">
-                                        <span className="text-xs font-bold">
-                                            {userName?.charAt(0).toUpperCase() || t('user_default').charAt(0).toUpperCase()}
-                                        </span>
-                                    </div>
                                 </div>
                                 <span className="font-medium text-gray-800 dark:text-white text-sm sm:text-base hidden sm:block">
                                     {userName}
@@ -302,7 +324,6 @@ const Navbar = () => {
                             {t('login')}
                         </NavLink>
                     )}
-
                     {/* ГАМБУРГЕР — ТОЛЬКО НА МОБИЛКАХ И ПЛАНШЕТАХ */}
                     <button
                         className="lg:hidden btn btn-ghost btn-circle p-1 sm:p-2"
