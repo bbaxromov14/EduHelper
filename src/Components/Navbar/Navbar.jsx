@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/ReactContext';
 import items from "../../Utils/Utils";
-import { supabase } from '../../lib/supabase'; // Заменили Firebase на Supabase
+import { supabase } from '../../lib/supabase';
+import { useTranslation } from 'react-i18next';
 
 // Хук для отслеживания размера окна
 const useWindowSize = () => {
@@ -33,10 +34,11 @@ const Navbar = () => {
     const [isPremium, setIsPremium] = useState(false);
     const { width } = useWindowSize();
     const { user, isAuthenticated, logout } = useAuth();
+    const { t } = useTranslation();
 
     // Получаем данные пользователя из Supabase в реальном времени
     useEffect(() => {
-        if (!user?.id) return; // В Supabase user.id вместо user.uid
+        if (!user?.id) return;
 
         // Подписка на изменения профиля пользователя
         const channel = supabase
@@ -153,11 +155,11 @@ const Navbar = () => {
 
     // Безопасное имя пользователя
     const userName = useMemo(() => {
-        if (!userData?.full_name && !user?.user_metadata?.full_name) return 'User';
+        if (!userData?.full_name && !user?.user_metadata?.full_name) return t('user_default');
         const name = userData?.full_name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
         const cleanName = name.replace(/[<>]/g, '');
         return width < 640 ? cleanName.split(' ')[0] : cleanName;
-    }, [userData?.full_name, user?.user_metadata?.full_name, user?.email, width]);
+    }, [userData?.full_name, user?.user_metadata?.full_name, user?.email, width, t]);
 
     // Проверка роли администратора
     const isAdmin = userData?.role === 'admin' || user?.email?.includes('admin');
@@ -186,6 +188,19 @@ const Navbar = () => {
         }
     };
 
+    // Функция для получения переведенного названия пункта меню
+    const getTranslatedTitle = (title) => {
+        const translations = {
+            'Home': t('home'),
+            'Courses': t('courses'),
+            'Teachers': t('teachers'),
+            'Forum': t('forum'),
+            'Donate': t('donate'),
+            'Support': t('support')
+        };
+        return translations[title] || title;
+    };
+
     return (
         <div className='bg-white dark:bg-gray-800 shadow-[0_3px_5px_#D7E3E7] dark:shadow-gray-900 relative z-50'>
             <div className="navbar flex justify-between px-4 sm:px-6 md:px-8 lg:px-10 bg-base-100 dark:bg-gray-800">
@@ -197,7 +212,7 @@ const Navbar = () => {
                             EH
                         </div>
                         <h1 className="text-lg sm:text-xl md:text-2xl font-bold ml-1 sm:ml-2 text-gray-800 dark:text-white">
-                            EduHelper<span className="text-xs ml-1 bg-gradient-to-r from-[#0AB685] to-[#1855D4] bg-clip-text text-transparent">Uz</span>
+                            {t('app_name')}<span className="text-xs ml-1 bg-gradient-to-r from-[#0AB685] to-[#1855D4] bg-clip-text text-transparent">Uz</span>
                         </h1>
                     </button>
                 </NavLink>
@@ -210,14 +225,14 @@ const Navbar = () => {
                             to={item.path}
                             className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
                         >
-                            {item.title}
+                            {getTranslatedTitle(item.title)}
                         </NavLink>
                     ))}
                     <NavLink
                         to="/forum"
                         className={({ isActive }) => `btn btn-ghost rounded-[10px] mx-1 lg:mx-2 text-base lg:text-xl transition-all duration-300 hover:bg-[#F1F5F9] dark:hover:bg-gray-700 ${isActive ? 'bg-[#1D4ED8] text-white dark:bg-blue-600' : 'text-[#575C69] dark:text-gray-300'}`}
                     >
-                        Forum
+                        {t('forum')}
                     </NavLink>
                 </div>
 
@@ -230,14 +245,14 @@ const Navbar = () => {
                         className="hidden md:flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-full text-sm font-medium hover:shadow-lg transition-all duration-300"
                     >
                         <span className="text-lg">🎁</span>
-                        <span>Support</span>
+                        <span>{t('donate')}</span>
                     </NavLink>
 
                     {/* Премиум бейдж */}
                     {isPremium && (
                         <div className="hidden sm:flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 rounded-full text-xs font-bold">
                             <span className="text-xs">⭐</span>
-                            <span>PREMIUM</span>
+                            <span>{t('premium_badge')}</span>
                         </div>
                     )}
 
@@ -245,7 +260,7 @@ const Navbar = () => {
                     <button
                         className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition-all duration-300"
                         onClick={toggleNightMode}
-                        aria-label={nightMode ? "Switch to light mode" : "Switch to dark mode"}
+                        aria-label={nightMode ? t('switch_to_light_mode') : t('switch_to_dark_mode')}
                     >
                         {nightMode ?
                             <span className="text-yellow-400 text-sm sm:text-base" aria-hidden="true">☀️</span> :
@@ -264,7 +279,7 @@ const Navbar = () => {
                                     )}
                                     <div className="flex justify-center items-center bg-gradient-to-r from-[#0AB685] to-[#1855D4] text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8">
                                         <span className="text-xs font-bold">
-                                            {userName?.charAt(0).toUpperCase() || 'U'}
+                                            {userName?.charAt(0).toUpperCase() || t('user_default').charAt(0).toUpperCase()}
                                         </span>
                                     </div>
                                 </div>
@@ -274,21 +289,21 @@ const Navbar = () => {
                                 </span>
                             </div>
                             <ul tabIndex={0} className="dropdown-content menu bg-base-100 dark:bg-gray-800 rounded-box z-[1] w-48 sm:w-52 p-2 shadow">
-                                <li><NavLink to="/profile" className="text-sm sm:text-base">Profile</NavLink></li>
-                                <li><NavLink to="/achievements" className="text-sm sm:text-base">Achievements</NavLink></li>
+                                <li><NavLink to="/profile" className="text-sm sm:text-base">{t('profile')}</NavLink></li>
+                                <li><NavLink to="/achievements" className="text-sm sm:text-base">{t('achievements')}</NavLink></li>
 
                                 {/* Кнопка апгрейда для обычных пользователей */}
                                 {!isPremium && (
                                     <li>
                                         <NavLink to="/premium" className="text-sm sm:text-base bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 font-bold">
-                                            ⭐ Upgrade to Premium
+                                            ⭐ {t('upgrade_to_premium')}
                                         </NavLink>
                                     </li>
                                 )}
 
-                                <li><NavLink to="/settings" className="text-sm sm:text-base">Settings</NavLink></li>
-                                <li><NavLink to="/referrals" className="text-sm sm:text-base">Referral</NavLink></li>
-                                <li><button className="btn btn-error btn-sm sm:btn-md mt-2" onClick={handleLogout}>Logout</button></li>
+                                <li><NavLink to="/settings" className="text-sm sm:text-base">{t('settings')}</NavLink></li>
+                                <li><NavLink to="/referrals" className="text-sm sm:text-base">{t('referrals')}</NavLink></li>
+                                <li><button className="btn btn-error btn-sm sm:btn-md mt-2" onClick={handleLogout}>{t('logout_button')}</button></li>
                             </ul>
                         </div>
                     ) : (
@@ -296,7 +311,7 @@ const Navbar = () => {
                             to="/login"
                             className="flex justify-center items-center w-16 sm:w-20 md:w-24 h-8 sm:h-9 md:h-10 bg-gradient-to-r from-[#0AB685] to-[#1855D4] text-sm sm:text-base font-bold text-white rounded-[20px] transition-all duration-300 hover:scale-105 hover:shadow-[0_3px_15px_rgba(0,0,0,0.3)]"
                         >
-                            Login
+                            {t('login')}
                         </NavLink>
                     )}
 
@@ -304,7 +319,7 @@ const Navbar = () => {
                     <button
                         className="lg:hidden btn btn-ghost btn-circle p-1 sm:p-2"
                         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                        aria-label="Toggle menu"
+                        aria-label={t('menu')}
                     >
                         <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -325,18 +340,16 @@ const Navbar = () => {
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                             >
-                                {item.title}
+                                {getTranslatedTitle(item.title)}
                             </NavLink>
                         ))}
-
-
 
                         <NavLink
                             to="/forum"
                             onClick={() => setMobileMenuOpen(false)}
                             className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                         >
-                            Forum
+                            {t('forum')}
                         </NavLink>
 
                         {/* Донат в мобильном меню */}
@@ -345,7 +358,7 @@ const Navbar = () => {
                             onClick={() => setMobileMenuOpen(false)}
                             className="text-lg sm:text-xl text-[#575C69] dark:text-gray-300 hover:text-blue-600 py-1 sm:py-2 transition-colors duration-200"
                         >
-                            🎁 Donate
+                            🎁 {t('donate')}
                         </NavLink>
 
                         {/* Кнопка апгрейда в мобильном меню */}
@@ -355,7 +368,7 @@ const Navbar = () => {
                                 onClick={() => setMobileMenuOpen(false)}
                                 className="text-lg sm:text-xl bg-gradient-to-r from-yellow-400 to-yellow-600 text-gray-900 font-bold py-2 px-4 rounded-full"
                             >
-                                ⭐ Upgrade to Premium
+                                ⭐ {t('upgrade_to_premium')}
                             </NavLink>
                         )}
                     </div>
