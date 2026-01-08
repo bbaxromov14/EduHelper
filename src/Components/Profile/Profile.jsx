@@ -202,89 +202,67 @@ const Profile = () => {
         const oldLvl = Math.max(1, Math.floor((totalPoints || 0) / 100) + 1);
         setOldLevel(oldLvl);
 
-        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ С ИМЕНАМИ
-        const { data: globalRanking, error: rankingError } = await supabase
-          .rpc('get_global_ranking');
-
-        if (!rankingError && globalRanking && globalRanking.length > 0) {
-          const uniqueUsers = [];
-          const seenUsers = new Set();
-
-          globalRanking.forEach(userRank => {
-            if (!seenUsers.has(userRank.user_uuid)) {
-              seenUsers.add(userRank.user_uuid);
-
-              // Определяем отображаемое имя
-              let displayName = '';
-
-              if (userRank.user_full_name && userRank.user_full_name.trim()) {
-                // Используем полное имя если есть
-                displayName = userRank.user_full_name;
-              } else if (userRank.user_username && userRank.user_username.trim()) {
-                // Или username если есть
-                displayName = userRank.user_username;
-              } else {
-                // Или первую часть email
-                displayName = userRank.user_email?.split('@')[0] || t('user_default');
-              }
-
-              uniqueUsers.push({
-                id: userRank.user_uuid,
-                email: userRank.user_email,
-                fullName: userRank.user_full_name,
-                username: userRank.user_username,
-                displayName: displayName, // Добавляем отображаемое имя
-                points: userRank.total_points,
-                level: userRank.user_level,
-                rank: userRank.ranking
-              });
-            }
-          });
-
-          setAllUsers(uniqueUsers);
-          const myRank = uniqueUsers.findIndex(u => u.id === user.id) + 1;
-          setMyRank(myRank > 0 ? myRank : null);
-        } else {
-          // Fallback запрос с загрузкой имен из profiles
-          const { data: fallbackRanking } = await supabase
-            .from('user_progress')
-            .select(`
-    user_id, 
+        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ КАК В FORUMPAGE
+        const { data: topUsersData, error: rankingError } = await supabase
+          .from('user_progress')
+          .select(`
+    user_id,
     points,
-    profiles!inner(email, full_name, username)
+    profiles!inner(
+      id,
+      email,
+      full_name,
+      username,
+      avatar_url,
+      created_at
+    )
   `)
-            .order('points', { ascending: false })
-            .limit(10);
+          .order('points', { ascending: false })
+          .limit(15);
 
-          if (fallbackRanking && fallbackRanking.length > 0) {
-            const users = fallbackRanking.map((u, index) => {
-              // Определяем отображаемое имя
-              let displayName = '';
+        if (!rankingError && topUsersData && topUsersData.length > 0) {
+          console.log('ТОП пользователей из базы:', topUsersData);
 
-              if (u.profiles?.full_name && u.profiles.full_name.trim()) {
-                displayName = u.profiles.full_name;
-              } else if (u.profiles?.username && u.profiles.username.trim()) {
-                displayName = u.profiles.username;
-              } else {
-                displayName = u.profiles?.email?.split('@')[0] || t('user_default');
-              }
+          const users = topUsersData.map((item, index) => {
+            const profile = item.profiles;
 
-              return {
-                id: u.user_id,
-                email: u.profiles?.email || 'anonymous',
-                fullName: u.profiles?.full_name,
-                username: u.profiles?.username,
-                displayName: displayName, // Добавляем отображаемое имя
-                points: u.points || 0,
-                level: Math.max(1, Math.floor((u.points || 0) / 100) + 1),
-                rank: index + 1
-              };
+            // ТОЧНАЯ ТА ЖЕ ЛОГИКА КАК В FORUMPAGE
+            const displayName = profile?.full_name ||
+              profile?.username ||
+              profile?.email?.split('@')[0] ||
+              t('user_default');
+
+            console.log('Отладка имени:', {
+              email: profile?.email,
+              full_name: profile?.full_name,
+              username: profile?.username,
+              displayName: displayName
             });
 
-            setAllUsers(users);
-            const myRank = users.findIndex(u => u.id === user.id) + 1;
-            setMyRank(myRank > 0 ? myRank : null);
-          }
+            return {
+              id: item.user_id,
+              email: profile?.email || 'anonymous',
+              fullName: profile?.full_name,
+              username: profile?.username,
+              displayName: displayName, // Используем тот же алгоритм
+              points: item.points || 0,
+              level: Math.max(1, Math.floor((item.points || 0) / 100) + 1),
+              rank: index + 1,
+              avatar_url: profile?.avatar_url // Можем использовать для аватарки
+            };
+          });
+
+          console.log('Финальный список для ТОП-10:', users);
+          setAllUsers(users);
+
+          // Находим свой рейтинг
+          const myUser = users.find(u => u.id === user.id);
+          setMyRank(myUser ? myUser.rank : null);
+
+        } else {
+          console.log('Нет данных для ТОП-10:', rankingError);
+          setAllUsers([]);
+          setMyRank(null);
         }
 
         // 8. Проверяем повышение уровня
@@ -572,54 +550,59 @@ const Profile = () => {
             </div>
           </motion.div>
 
-          {/* ТОП-10 */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 2 }}
-            className="bg-black/60 backdrop-blur-2xl rounded-2xl sm:rounded-3xl border border-white/10 p-3 sm:p-4"
-          >
-            <h2 className="text-lg sm:text-xl md:text-2xl font-black text-center mb-3 sm:mb-4 bg-gradient-to-r from-[#0AB685] to-purple-400 bg-clip-text text-transparent">
-              {t('uzbekistan_top_10')}
-            </h2>
-            <div className="space-y-2">
-              {allUsers.slice(0, 10).map((u, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ x: -100, opacity: 0 }}
-                  animate={{ x: 0, opacity: 1 }}
-                  transition={{ delay: 2.1 + i * 0.1 }}
-                  className={`flex items-center justify-between p-2 sm:p-3 rounded-lg text-sm ${i < 3 ? 'bg-gradient-to-r from-yellow-600/80 to-orange-600/80' : 'bg-white/5'} ${u.email === safeUser.email ? 'ring-2 ring-cyan-400' : ''}`}
-                >
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <span className="text-base sm:text-lg md:text-xl min-w-6 text-center">
-                      {i === 0 && "🥇"}
-                      {i === 1 && "🥈"}
-                      {i === 2 && "🥉"}
-                      {i > 2 && `${i + 1}`}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      {/* ИСПОЛЬЗУЕМ displayName ВМЕСТО email */}
-                      <div className="font-bold truncate text-xs sm:text-sm md:text-base" title={u.displayName}>
-                        {u.displayName}
-                      </div>
-                      <div className="text-cyan-300 text-[10px] sm:text-xs">
-                        L{u.level}
-                      </div>
+          {/* ТОП-10 с аватарками */}
+          {allUsers.slice(0, 10).map((u, i) => (
+            <motion.div
+              key={i}
+              initial={{ x: -100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 2.1 + i * 0.1 }}
+              className={`flex items-center justify-between p-2 sm:p-3 rounded-lg text-sm ${i < 3 ? 'bg-gradient-to-r from-yellow-600/80 to-orange-600/80' : 'bg-white/5'} ${u.email === safeUser.email ? 'ring-2 ring-cyan-400' : ''}`}
+            >
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Добавляем аватарку */}
+                <div className="relative">
+                  {u.avatar_url ? (
+                    <img
+                      src={u.avatar_url}
+                      alt={u.displayName}
+                      className="w-6 h-6 sm:w-8 sm:h-8 rounded-full"
+                    />
+                  ) : (
+                    <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                      <span className="text-xs font-bold text-white">
+                        {u.displayName?.charAt(0).toUpperCase()}
+                      </span>
                     </div>
+                  )}
+                  {i < 3 && (
+                    <div className="absolute -top-1 -right-1">
+                      {i === 0 && <span className="text-yellow-400">🥇</span>}
+                      {i === 1 && <span className="text-gray-300">🥈</span>}
+                      {i === 2 && <span className="text-amber-600">🥉</span>}
+                    </div>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold truncate text-xs sm:text-sm md:text-base">
+                    {u.displayName}
                   </div>
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ delay: 2.3 + i * 0.1 }}
-                    className="font-black text-yellow-300 text-sm sm:text-base md:text-lg"
-                  >
-                    {formatNumber(u.points || 0)}
-                  </motion.div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
+                  <div className="text-cyan-300 text-[10px] sm:text-xs">
+                    L{u.level}
+                  </div>
+                </div>
+              </div>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 2.3 + i * 0.1 }}
+                className="font-black text-yellow-300 text-sm sm:text-base md:text-lg"
+              >
+                {formatNumber(u.points || 0)}
+              </motion.div>
+            </motion.div>
+          ))}
 
         </div>
 
