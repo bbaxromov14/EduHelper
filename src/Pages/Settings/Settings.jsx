@@ -1,9 +1,9 @@
 // src/Pages/Settings.jsx
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../context/ReactContext';
-import { supabase } from '../lib/supabase';
-import premiumManager from '../Utils/premiumManager';
+import { useAuth } from '../../context/ReactContext';
+import { supabase } from '../../lib/supabase';
+import premiumManager from '../../Utils/premiumManager';
 
 const Settings = () => {
   const { t, i18n } = useTranslation();
