@@ -4,6 +4,7 @@ import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import { supabase } from '../../lib/supabase';
+import { useTranslation } from 'react-i18next';
 
 // 🔒 Безопасные функции
 const sanitizeString = (str) => {
@@ -22,13 +23,11 @@ const formatNumber = (num) => {
 const calculateStreak = (progressData) => {
   if (!progressData?.length) return 0;
 
-
   // Получаем уникальные даты завершенных уроков в UTC
   const dates = progressData
     .filter(p => p.completed && p.completed_at)
     .map(p => {
       try {
-        // Парсим дату как UTC
         const dateStr = p.completed_at;
         const date = new Date(dateStr);
 
@@ -36,9 +35,7 @@ const calculateStreak = (progressData) => {
           return null;
         }
 
-        // Получаем дату в формате YYYY-MM-DD в UTC
         const utcDateStr = date.toISOString().split('T')[0];
-
         return utcDateStr;
       } catch (error) {
         return null;
@@ -46,21 +43,16 @@ const calculateStreak = (progressData) => {
     })
     .filter(Boolean);
 
-  // Уникальные даты
   const uniqueDates = [...new Set(dates)];
 
   if (uniqueDates.length === 0) {
     return 0;
   }
 
-  // Сортируем по убыванию
   uniqueDates.sort((a, b) => new Date(b) - new Date(a));
 
-  // Текущая дата в UTC
   const now = new Date();
   const todayUTC = now.toISOString().split('T')[0];
-
-  // Проверяем, была ли активность сегодня
   const hasToday = uniqueDates[0] === todayUTC;
 
   let streak = 0;
@@ -69,14 +61,10 @@ const calculateStreak = (progressData) => {
   for (const dateStr of uniqueDates) {
     const currentDate = new Date(dateStr);
 
-    // Проверяем, совпадает ли дата с ожидаемой
     if (currentDate.toISOString().split('T')[0] === expectedDate.toISOString().split('T')[0]) {
       streak++;
-
-      // Уменьшаем ожидаемую дату на 1 день
       expectedDate.setUTCDate(expectedDate.getUTCDate() - 1);
     } else {
-      // Нашли разрыв
       break;
     }
   }
@@ -86,6 +74,7 @@ const calculateStreak = (progressData) => {
 
 const Profile = () => {
   const { user, logout } = useAuth();
+  const { t } = useTranslation();
   const [showConfetti, setShowConfetti] = useState(false);
   const [userProgress, setUserProgress] = useState({
     lessons_completed: 0,
@@ -104,8 +93,6 @@ const Profile = () => {
   const [testPoints, setTestPoints] = useState(0);
   const [completedLessonsCount, setCompletedLessonsCount] = useState(0);
   const [completedCoursesCount, setCompletedCoursesCount] = useState(0);
-
-  // 🔴 ДОБАВЛЕНО: для хранения всех данных прогресса и текущего streak
   const [allProgressData, setAllProgressData] = useState([]);
   const [currentStreak, setCurrentStreak] = useState(0);
 
@@ -113,7 +100,7 @@ const Profile = () => {
   const safeUser = {
     fullName: sanitizeString(user?.fullName || user?.full_name || ''),
     email: sanitizeString(user?.email || ''),
-    firstName: sanitizeString(user?.fullName?.split(' ')[0] || 'User')
+    firstName: sanitizeString(user?.fullName?.split(' ')[0] || t('user_default'))
   };
 
   // 🔄 ЗАГРУЗКА ДАННЫХ ИЗ SUPABASE
@@ -132,8 +119,6 @@ const Profile = () => {
 
         if (!allProgressError) {
           setAllProgressData(allProgressData || []);
-
-          // Рассчитываем streak на основе всех данных
           const calculatedStreak = calculateStreak(allProgressData || []);
           setCurrentStreak(calculatedStreak);
         }
@@ -214,8 +199,6 @@ const Profile = () => {
 
         // 6. Рассчитываем ОБЩИЕ баллы
         const totalPoints = (saved.points || 0) + totalTestPoints;
-
-        // Сохраняем старый уровень для проверки повышения
         const oldLvl = Math.max(1, Math.floor((totalPoints || 0) / 100) + 1);
         setOldLevel(oldLvl);
 
@@ -242,7 +225,6 @@ const Profile = () => {
           });
 
           setAllUsers(uniqueUsers);
-
           const myRank = uniqueUsers.findIndex(u => u.id === user.id) + 1;
           setMyRank(myRank > 0 ? myRank : null);
         } else {
@@ -267,7 +249,6 @@ const Profile = () => {
             }));
 
             setAllUsers(users);
-
             const myRank = users.findIndex(u => u.id === user.id) + 1;
             setMyRank(myRank > 0 ? myRank : null);
           }
@@ -292,7 +273,6 @@ const Profile = () => {
 
       } catch (error) {
         console.error('❌ Ошибка загрузки данных профиля:', error);
-
         setUserProgress({
           lessons_completed: 0,
           streak: 0,
@@ -302,7 +282,6 @@ const Profile = () => {
           perfect_lessons: 0,
           total_courses_completed: 0
         });
-
         setAllUsers([]);
         setMyRank(null);
       } finally {
@@ -347,24 +326,19 @@ const Profile = () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(testChannel);
     };
-  }, [user]);
+  }, [user, t]);
 
   // 🔒 Расчет статистик
   const stats = {
     level: Math.max(1, Math.floor((userProgress.points || 0) / 100) + 1),
     xpCurrent: Math.max(0, Math.min(100, (userProgress.points || 0) % 100)),
     xpNeeded: 100 - Math.max(0, Math.min(100, (userProgress.points || 0) % 100)),
-
-    // 🔴 ИСПРАВЛЕНО: используем ДИНАМИЧЕСКИЙ расчет streak
     streak: currentStreak,
-
     points: userProgress.points || 0,
     testPoints: testPoints,
     progressPoints: Math.max(0, (userProgress.points || 0) - testPoints),
-
     lessons: completedLessonsCount,
     courses: completedCoursesCount,
-
     nightLessons: Math.max(0, userProgress.night_lessons || 0),
     morningLessons: Math.max(0, userProgress.morning_lessons || 0),
     perfectLessons: Math.max(0, userProgress.perfect_lessons || 0)
@@ -375,7 +349,7 @@ const Profile = () => {
       <div className="min-h-screen bg-[#0a0e17] flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-t-[#0AB685] border-r-transparent border-b-purple-500 border-l-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white text-lg">Yuklanmoqda...</p>
+          <p className="text-white text-lg">{t('loading')}</p>
         </div>
       </div>
     );
@@ -398,13 +372,13 @@ const Profile = () => {
                 ⭐
               </div>
               <div className="text-xl md:text-2xl lg:text-3xl font-black text-yellow-400 mb-2">
-                YANGI DARAJA!
+                {t('new_level')}
               </div>
               <div className="text-4xl md:text-5xl lg:text-6xl font-black text-purple-400 mb-2">
                 {stats.level}
               </div>
               <div className="text-base md:text-lg lg:text-xl text-white mb-3">
-                Darajangiz oshdi!
+                {t('level_increased')}
               </div>
               <motion.div
                 initial={{ scale: 0 }}
@@ -412,7 +386,7 @@ const Profile = () => {
                 transition={{ delay: 0.5, type: "spring" }}
                 className="text-lg md:text-xl lg:text-2xl text-green-400 font-bold"
               >
-                Tabriklaymiz!
+                {t('congratulations')}
               </motion.div>
             </motion.div>
           </div>
@@ -444,7 +418,7 @@ const Profile = () => {
                     className="relative"
                   >
                     <div className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 rounded-full bg-gradient-to-br from-[#0AB685] to-purple-600 flex items-center justify-center text-xl sm:text-2xl md:text-3xl font-black ring-3 sm:ring-4 ring-[#0AB685]/50 shadow-lg">
-                      {safeUser.fullName.charAt(0).toUpperCase() || 'U'}
+                      {safeUser.fullName.charAt(0).toUpperCase() || t('user_default').charAt(0).toUpperCase()}
                     </div>
                     <div className="absolute -bottom-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 md:w-5 md:h-5 bg-green-400 rounded-full border-2 border-black animate-ping"></div>
                   </motion.div>
@@ -464,7 +438,7 @@ const Profile = () => {
                   <div className="text-2xl sm:text-3xl md:text-4xl font-black bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
                     #{myRank || '-'}
                   </div>
-                  <p className="text-xs text-gray-400">Reyting</p>
+                  <p className="text-xs text-gray-400">{t('rating')}</p>
                 </motion.div>
               </div>
 
@@ -472,7 +446,7 @@ const Profile = () => {
               <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ delay: 0.7, duration: 0.8 }}>
                 <div className="mb-3 sm:mb-4">
                   <div className="flex justify-between text-xs sm:text-sm mb-1">
-                    <span className="font-bold">Daraja {stats.level}</span>
+                    <span className="font-bold">{t('level')} {stats.level}</span>
                     <span className="text-cyan-300">{stats.xpCurrent}/100 XP</span>
                   </div>
                   <div className="h-7 sm:h-8 md:h-9 bg-white/10 rounded-full overflow-hidden border border-[#0AB685]/50 relative">
@@ -486,7 +460,7 @@ const Profile = () => {
                     </motion.div>
                     <div className="absolute top-0 left-0 right-0 bottom-0 flex items-center justify-center pointer-events-none">
                       <span className="text-xs opacity-70">
-                        {stats.xpNeeded} XP до {stats.level + 1} уровня
+                        {stats.xpNeeded} {t('until_next_level', { level: stats.level + 1 })}
                       </span>
                     </div>
                   </div>
@@ -497,29 +471,35 @@ const Profile = () => {
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
                 {[
                   {
+                    key: 'streak',
                     value: stats.streak,
-                    label: "Streak",
+                    label: t('streak'),
                     icon: "🔥",
                     color: "orange",
-                    tooltip: "Ketma-ket kunlar soni"
+                    tooltip: t('consecutive_days')
                   },
                   {
+                    key: 'points',
                     value: stats.points,
-                    label: "Ochko",
+                    label: t('points'),
                     icon: "⭐",
                     gradient: true,
-                    tooltip: `Jami ball: ${stats.progressPoints} (progress) + ${stats.testPoints} (testlar)`
+                    tooltip: t('total_points_tooltip', { 
+                      progress: stats.progressPoints, 
+                      test: stats.testPoints 
+                    })
                   },
                   {
+                    key: 'lessons',
                     value: stats.lessons,
-                    label: "Dars",
+                    label: t('lessons'),
                     icon: "📚",
                     color: "purple",
-                    tooltip: "Bajarilgan darslar soni"
+                    tooltip: t('completed_lessons')
                   }
                 ].map((stat, i) => (
                   <motion.div
-                    key={i}
+                    key={stat.key}
                     initial={{ y: 50, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 1 + i * 0.2 }}
@@ -567,7 +547,7 @@ const Profile = () => {
             className="bg-black/60 backdrop-blur-2xl rounded-2xl sm:rounded-3xl border border-white/10 p-3 sm:p-4"
           >
             <h2 className="text-lg sm:text-xl md:text-2xl font-black text-center mb-3 sm:mb-4 bg-gradient-to-r from-[#0AB685] to-purple-400 bg-clip-text text-transparent">
-              Oʻzbekiston Top-10
+              {t('uzbekistan_top_10')}
             </h2>
             <div className="space-y-2">
               {allUsers.slice(0, 10).map((u, i) => (
@@ -587,7 +567,7 @@ const Profile = () => {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="font-bold truncate text-xs sm:text-sm md:text-base">
-                        {u.email?.split('@')[0] || 'NoName'}
+                        {u.email?.split('@')[0] || t('user_default')}
                       </div>
                       <div className="text-cyan-300 text-[10px] sm:text-xs">
                         L{Math.max(1, Math.floor((u.points || 0) / 100) + 1)}
@@ -624,7 +604,7 @@ const Profile = () => {
             <span className="absolute -inset-2 rounded-full bg-red-500/30 animate-ping opacity-75" />
             <span className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent rounded-full" />
             <span className="relative z-10 flex items-center justify-center gap-3">
-              Chiqish
+              {t('logout')}
             </span>
             <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-32 h-10 bg-black/40 blur-3xl scale-0 group-hover:scale-100 transition-transform duration-300" />
           </button>
