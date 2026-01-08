@@ -1,10 +1,12 @@
 // src/components/DonateSystemPayPal.jsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
 import { NavLink } from 'react-router-dom';
 
 const DonateSystem = () => {
+  const { t } = useTranslation();
   const [donateAmount, setDonateAmount] = useState(10000);
   const { user } = useAuth();
   const [isProcessing, setIsProcessing] = useState(false);
@@ -43,13 +45,13 @@ const DonateSystem = () => {
         };
         
         script.onerror = () => {
-          console.error('Failed to load PayPal SDK');
-          alert('Не удалось загрузить платежную систему PayPal. Пожалуйста, попробуйте позже.');
+          console.error(t('paypal_load_error') || 'Failed to load PayPal SDK');
+          alert(t('paypal_load_error_alert') || 'Не удалось загрузить платежную систему PayPal. Пожалуйста, попробуйте позже.');
         };
         
         document.body.appendChild(script);
       } catch (error) {
-        console.error('Error loading PayPal:', error);
+        console.error(t('paypal_load_general_error') || 'Error loading PayPal:', error);
       }
     };
 
@@ -61,7 +63,7 @@ const DonateSystem = () => {
         paypalButtonsRef.current = null;
       }
     };
-  }, [donateAmount]);
+  }, [donateAmount, t]);
 
   // Рендерим кнопки PayPal
   const renderPayPalButtons = () => {
@@ -94,7 +96,7 @@ const DonateSystem = () => {
           setPaymentStatus('creating');
 
           // 1. Конвертируем сумму из сумов в доллары
-          const amountInUSD = (donateAmount / 12500).toFixed(2); // 1 USD ≈ 12500 UZS
+          const amountInUSD = (donateAmount / 12500).toFixed(2);
           
           // 2. Создаем запись о донате в базе
           const { data: donation, error } = await supabase
@@ -129,8 +131,8 @@ const DonateSystem = () => {
                 }
               },
               items: [{
-                name: `Поддержка образования в Узбекистане`,
-                description: `Донат в размере ${donateAmount.toLocaleString()} сум`,
+                name: t('donation_item_name') || 'Поддержка образования в Узбекистане',
+                description: t('donation_item_description', { amount: donateAmount.toLocaleString() }) || `Донат в размере ${donateAmount.toLocaleString()} сум`,
                 quantity: "1",
                 unit_amount: {
                   value: amountInUSD,
@@ -152,8 +154,8 @@ const DonateSystem = () => {
           });
 
         } catch (error) {
-          console.error('Error creating PayPal order:', error);
-          alert('❌ Ошибка при создании платежа: ' + error.message);
+          console.error(t('paypal_order_error') || 'Error creating PayPal order:', error);
+          alert(`❌ ${t('payment_creation_error') || 'Ошибка при создании платежа:'} ${error.message}`);
           setIsProcessing(false);
           setPaymentStatus('failed');
           throw error;
@@ -190,13 +192,13 @@ const DonateSystem = () => {
           setIsProcessing(false);
           
           // 5. Показываем благодарственное сообщение
-          alert(`🎉 Спасибо за ваш донат в размере ${donateAmount.toLocaleString()} сум! Вы помогаете развитию образования в Узбекистане!`);
+          alert(`🎉 ${t('donation_thank_you', { amount: donateAmount.toLocaleString() }) || `Спасибо за ваш донат в размере ${donateAmount.toLocaleString()} сум! Вы помогаете развитию образования в Узбекистане!`}`);
           
           // 6. Перенаправляем на страницу благодарности
           window.location.href = `/donate/thank-you?id=${donationId}&amount=${donateAmount}`;
 
         } catch (error) {
-          console.error('Error capturing payment:', error);
+          console.error(t('payment_capture_error') || 'Error capturing payment:', error);
           
           // Обновляем статус в базе как неудачный
           await supabase
@@ -209,7 +211,7 @@ const DonateSystem = () => {
 
           setPaymentStatus('failed');
           setIsProcessing(false);
-          alert('❌ Произошла ошибка при обработке платежа. Пожалуйста, попробуйте еще раз.');
+          alert(`❌ ${t('payment_processing_error') || 'Произошла ошибка при обработке платежа. Пожалуйста, попробуйте еще раз.'}`);
         }
       },
 
@@ -218,7 +220,7 @@ const DonateSystem = () => {
         console.error('PayPal error:', err);
         setIsProcessing(false);
         setPaymentStatus('failed');
-        alert('❌ Ошибка платежной системы. Пожалуйста, попробуйте другой способ оплаты.');
+        alert(`❌ ${t('payment_system_error') || 'Ошибка платежной системы. Пожалуйста, попробуйте другой способ оплаты.'}`);
       },
 
       // При отмене
@@ -252,9 +254,9 @@ const DonateSystem = () => {
         })
         .eq('id', 1);
 
-      if (error) console.error('Error updating donation stats:', error);
+      if (error) console.error(t('donation_stats_error') || 'Error updating donation stats:', error);
     } catch (error) {
-      console.error('Error:', error);
+      console.error(t('general_error') || 'Error:', error);
     }
   };
 
@@ -280,20 +282,79 @@ const DonateSystem = () => {
     return amount.toLocaleString('uz-UZ');
   };
 
+  // Получение статусного сообщения
+  const getStatusMessage = () => {
+    switch(paymentStatus) {
+      case 'creating':
+        return (
+          <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              <span className="text-blue-700 dark:text-blue-300">
+                {t('payment_creating') || 'Создание платежа...'}
+              </span>
+            </div>
+          </div>
+        );
+      case 'processing':
+        return (
+          <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600 mr-2"></div>
+              <span className="text-yellow-700 dark:text-yellow-300">
+                {t('payment_processing') || 'Обработка платежа...'}
+              </span>
+            </div>
+          </div>
+        );
+      case 'success':
+        return (
+          <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
+            <div className="flex items-center">
+              <span className="text-green-700 dark:text-green-300">
+                ✅ {t('payment_success') || 'Платеж успешно завершен! Спасибо за вашу поддержку!'}
+              </span>
+            </div>
+          </div>
+        );
+      case 'failed':
+        return (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 rounded-lg">
+            <div className="flex items-center">
+              <span className="text-red-700 dark:text-red-300">
+                ❌ {t('payment_failed') || 'Платеж не удался. Пожалуйста, попробуйте еще раз.'}
+              </span>
+            </div>
+          </div>
+        );
+      case 'cancelled':
+        return (
+          <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
+            <div className="flex items-center">
+              <span className="text-gray-700 dark:text-gray-300">
+                ⚠️ {t('payment_cancelled') || 'Платеж отменен.'}
+              </span>
+            </div>
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div className="max-w-md mx-auto p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
       <h2 className="text-2xl font-bold text-center mb-6 text-gray-800 dark:text-white">
-        Поддержите развитие образования в Узбекистане 🎓
+        {t('donate_title') || 'Поддержите развитие образования в Узбекистане 🎓'}
       </h2>
       
       <p className="text-gray-600 dark:text-gray-300 mb-6 text-center">
-        Ваш донат поможет нам создавать бесплатные образовательные материалы 
-        для студентов и школьников по всей стране.
+        {t('donate_description') || 'Ваш донат поможет нам создавать бесплатные образовательные материалы для студентов и школьников по всей стране.'}
       </p>
       
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-          Выберите сумму доната (сум):
+          {t('select_amount') || 'Выберите сумму доната (сум):'}
         </label>
         
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
@@ -315,7 +376,7 @@ const DonateSystem = () => {
         
         <div className="mt-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Или введите свою сумму:
+            {t('custom_amount') || 'Или введите свою сумму:'}
           </label>
           <div className="relative">
             <input
@@ -330,81 +391,35 @@ const DonateSystem = () => {
             <span className="absolute left-4 top-3.5 text-gray-500">сум</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Минимальная сумма: 1 000 сум
+            {t('min_amount') || 'Минимальная сумма: 1 000 сум'}
           </p>
         </div>
       </div>
       
       <div className="mb-4 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
         <div className="flex justify-between text-sm">
-          <span className="text-gray-700 dark:text-gray-300">Выбранная сумма:</span>
+          <span className="text-gray-700 dark:text-gray-300">
+            {t('selected_amount') || 'Выбранная сумма:'}
+          </span>
           <span className="font-bold text-blue-600 dark:text-blue-400">
             {formatAmount(donateAmount)} сум
           </span>
         </div>
         <div className="flex justify-between text-sm mt-1">
-          <span className="text-gray-700 dark:text-gray-300">Примерно в USD:</span>
+          <span className="text-gray-700 dark:text-gray-300">
+            {t('approx_usd') || 'Примерно в USD:'}
+          </span>
           <span className="font-bold text-gray-800 dark:text-gray-200">
             ≈ ${(donateAmount / 12500).toFixed(2)}
           </span>
         </div>
         <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-          Комиссия PayPal: ~${(donateAmount / 12500 * 0.029 + 0.30).toFixed(2)}
+          {t('paypal_fee', { fee: (donateAmount / 12500 * 0.029 + 0.30).toFixed(2) }) || `Комиссия PayPal: ~$${(donateAmount / 12500 * 0.029 + 0.30).toFixed(2)}`}
         </div>
       </div>
       
       {/* Статус платежа */}
-      {paymentStatus === 'creating' && (
-        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-            <span className="text-blue-700 dark:text-blue-300">
-              Создание платежа...
-            </span>
-          </div>
-        </div>
-      )}
-      
-      {paymentStatus === 'processing' && (
-        <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
-          <div className="flex items-center">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-600 mr-2"></div>
-            <span className="text-yellow-700 dark:text-yellow-300">
-              Обработка платежа...
-            </span>
-          </div>
-        </div>
-      )}
-      
-      {paymentStatus === 'success' && (
-        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 rounded-lg">
-          <div className="flex items-center">
-            <span className="text-green-700 dark:text-green-300">
-              ✅ Платеж успешно завершен! Спасибо за вашу поддержку!
-            </span>
-          </div>
-        </div>
-      )}
-      
-      {paymentStatus === 'failed' && (
-        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 rounded-lg">
-          <div className="flex items-center">
-            <span className="text-red-700 dark:text-red-300">
-              ❌ Платеж не удался. Пожалуйста, попробуйте еще раз.
-            </span>
-          </div>
-        </div>
-      )}
-      
-      {paymentStatus === 'cancelled' && (
-        <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/30 rounded-lg">
-          <div className="flex items-center">
-            <span className="text-gray-700 dark:text-gray-300">
-              ⚠️ Платеж отменен.
-            </span>
-          </div>
-        </div>
-      )}
+      {getStatusMessage()}
       
       {/* Контейнер для кнопок PayPal */}
       <div id="paypal-button-container" className="mt-4"></div>
@@ -412,7 +427,7 @@ const DonateSystem = () => {
       {!paypalLoaded && (
         <div className="text-center py-4 text-gray-500">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400 mr-2"></div>
-          Загрузка платежной системы PayPal...
+          {t('loading_paypal') || 'Загрузка платежной системы PayPal...'}
         </div>
       )}
       
@@ -420,25 +435,22 @@ const DonateSystem = () => {
         <div className="flex items-center justify-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
           <div className="flex items-center">
             <span className="mr-1">🌍</span>
-            <span>Международные карты</span>
+            <span>{t('international_cards') || 'Международные карты'}</span>
           </div>
           <div className="flex items-center">
             <span className="mr-1">🔒</span>
-            <span>SSL защита</span>
+            <span>{t('ssl_protection') || 'SSL защита'}</span>
           </div>
           <div className="flex items-center">
             <span className="mr-1">💳</span>
-            <span>Visa/Mastercard</span>
+            <span>{t('visa_mastercard') || 'Visa/Mastercard'}</span>
           </div>
         </div>
       </div>
       
       <div className="mt-6 border-t border-gray-200 dark:border-gray-700 pt-4">
         <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          💳 Оплата производится через защищенную систему PayPal<br />
-          🔐 Ваши платежные данные защищены по стандарту PCI DSS Level 1<br />
-          🌍 Принимаем карты со всего мира<br />
-          📄 Вы получите чек на email после оплаты
+          {t('payment_security_info') || '💳 Оплата производится через защищенную систему PayPal\n🔐 Ваши платежные данные защищены по стандарту PCI DSS Level 1\n🌍 Принимаем карты со всего мира\n📄 Вы получите чек на email после оплаты'}
         </p>
         
         <div className="mt-4 flex justify-center space-x-2">
@@ -462,7 +474,7 @@ const DonateSystem = () => {
           to="/"
           className="inline-block mb-8 text-indigo-600 dark:text-indigo-400 hover:underline text-lg"
         >
-          ← Ortga
+          ← {t('back') || 'Ortga'}
         </NavLink>
       </div>
     </div>
