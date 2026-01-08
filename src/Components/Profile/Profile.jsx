@@ -197,62 +197,67 @@ const Profile = () => {
         }
         setCompletedCoursesCount(completedCourses);
 
-        // 6. Рассчитываем ОБЩИЕ баллы
-        const totalPoints = (saved.points || 0) + totalTestPoints;
+        // 6. Рассчитываем ОБЩИЕ баллы ДЛЯ ТЕКУЩЕГО ПОЛЬЗОВАТЕЛЯ
+        // Сначала получим профиль текущего пользователя
+        const { data: currentUserProfile } = await supabase
+          .from('profiles')
+          .select('total_points, points')
+          .eq('id', user.id)
+          .single();
+
+        // Берем баллы из profiles
+        const profilePoints = currentUserProfile?.total_points || currentUserProfile?.points || 0;
+        const totalPoints = profilePoints + totalTestPoints; // Добавляем тестовые баллы
         const oldLvl = Math.max(1, Math.floor((totalPoints || 0) / 100) + 1);
         setOldLevel(oldLvl);
-
-        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ КАК В FORUMPAGE
+        // 7. ЗАГРУЖАЕМ ГЛОБАЛЬНЫЙ РЕЙТИНГ ИЗ ПРАВИЛЬНОЙ ТАБЛИЦЫ
         const { data: topUsersData, error: rankingError } = await supabase
-          .from('user_progress')
+          .from('profiles') // Берем из profiles!
           .select(`
-    user_id,
+    id,
+    email,
+    full_name,
+    username,
+    avatar_url,
+    total_points,
     points,
-    profiles!inner(
-      id,
-      email,
-      full_name,
-      username,
-      avatar_url,
-      created_at
-    )
+    created_at
   `)
-          .order('points', { ascending: false })
+          .order('total_points', { ascending: false }) // Сортируем по total_points
           .limit(15);
 
         if (!rankingError && topUsersData && topUsersData.length > 0) {
-          console.log('ТОП пользователей из базы:', topUsersData);
+          console.log('ТОП пользователей из PROFILES:', topUsersData);
 
-          const users = topUsersData.map((item, index) => {
-            const profile = item.profiles;
+          const users = topUsersData.map((profile, index) => {
+            // Берем баллы - сначала total_points, потом points
+            const userPoints = profile.total_points || profile.points || 0;
 
-            // ТОЧНАЯ ТА ЖЕ ЛОГИКА КАК В FORUMPAGE
             const displayName = profile?.full_name ||
               profile?.username ||
               profile?.email?.split('@')[0] ||
               t('user_default');
 
-            console.log('Отладка имени:', {
-              email: profile?.email,
-              full_name: profile?.full_name,
-              username: profile?.username,
-              displayName: displayName
+            console.log('Пользователь с баллами:', {
+              name: displayName,
+              total_points: profile.total_points,
+              points: profile.points,
+              finalPoints: userPoints
             });
 
             return {
-              id: item.user_id,
-              email: profile?.email || 'anonymous',
-              fullName: profile?.full_name,
-              username: profile?.username,
-              displayName: displayName, // Используем тот же алгоритм
-              points: item.points || 0,
-              level: Math.max(1, Math.floor((item.points || 0) / 100) + 1),
+              id: profile.id,
+              email: profile.email,
+              fullName: profile.full_name,
+              username: profile.username,
+              displayName: displayName,
+              points: userPoints, // Правильные баллы!
+              level: Math.max(1, Math.floor((userPoints || 0) / 100) + 1),
               rank: index + 1,
-              avatar_url: profile?.avatar_url // Можем использовать для аватарки
+              avatar_url: profile.avatar_url
             };
           });
 
-          console.log('Финальный список для ТОП-10:', users);
           setAllUsers(users);
 
           // Находим свой рейтинг
