@@ -24,34 +24,23 @@ const Settings = () => {
     lessonsCompleted: 0,
     successRate: 0,
   });
-  
+
   // Список запрещенных слов и имен
   const forbiddenWords = [
-    // Административные/системные слова
     'admin', 'administrator', 'moderator', 'support', 'system', 'root', 'superuser',
     'eduhelper', 'edu helper', 'eduhelper admin', 'admin eduhelper',
     'ehelper', 'education helper', 'курс', 'course', 'обучение',
-    
-    // Нецензурные/оскорбительные слова (рус/узб)
     'am', 'kot', 'ko\'t', 'qotoq', 'qo\'toq', 'jalab', 'foxisha',
     'сука', 'блядь', 'пизда', 'хуй', 'ебать', 'пидор', 'гандон',
     'jinni', 'jallob', 'ahmoq', 'tentak', 'gelak', 'gandon',
     'shaitan', 'iblis', 'jin', 'dev', 'шайтан', 'ибис',
-    
-    // 18+ контент
     'sex', 'porn', 'xxx', 'onlyfans', 'порно', 'секс', 'шлюха',
     'prostitute', 'hooker', 'escort', 'проститутка', 'курва',
     'fuck', 'shit', 'bitch', 'asshole', 'dick', 'cock',
-    
-    // Другие запрещенные
     'hack', 'hacker', 'cracker', 'взлом', 'взломщик',
     'scam', 'fraud', 'мошенник', 'аферист',
     'drug', 'наркотик', 'наркоман', 'алкоголь',
-    
-    // Религиозные оскорбления
     'kofir', 'kofr', 'язычник', 'еретик', 'blasphemy',
-    
-    // Расистские/дискриминационные
     'nigger', 'ниггер', 'чурка', 'хач', 'blackie',
   ];
 
@@ -67,19 +56,20 @@ const Settings = () => {
           // Загружаем профиль пользователя
           const { data: profileData, error } = await supabase
             .from('profiles')
-            .select('preferred_language, full_name, avatar_url, username, points, total_points')
+            .select('preferred_language, full_name, avatar_url, username')
             .eq('id', user.id)
             .single();
 
           if (!error && profileData) {
             // Устанавливаем язык
-            if (profileData.preferred_language) {
-              i18n.changeLanguage(profileData.preferred_language);
-              setLanguage(profileData.preferred_language);
-            }
+            const savedLanguage = profileData.preferred_language || 
+                                 localStorage.getItem('preferred_language') || 
+                                 'uz';
+            i18n.changeLanguage(savedLanguage);
+            setLanguage(savedLanguage);
             
-            // Устанавливаем имя (приоритет: username > full_name > email)
-            const displayName = profileData.username || profileData.full_name || user.email;
+            // Устанавливаем имя
+            const displayName = profileData.full_name || user.email;
             setName(displayName);
             
             // Устанавливаем аватар
@@ -145,7 +135,7 @@ const Settings = () => {
   // Проверка имени на запрещенные слова
   const validateName = (name) => {
     if (!name || name.trim().length < 2) {
-      return { valid: false, message: 'Ism kamida 2 ta belgidan iborat bo\'lishi kerak' };
+      return { valid: false, message: t('min_chars') };
     }
     
     if (name.length > 50) {
@@ -159,12 +149,13 @@ const Settings = () => {
       if (nameLower.includes(word.toLowerCase())) {
         return { 
           valid: false, 
-          message: `Ismda "${word}" so'zi taqiqlangan. Iltimos, boshqa ism tanlang.`
+          message: t('name_contains_forbidden', { word: word }) || 
+                  `Ismda "${word}" so'zi taqiqlangan. Iltimos, boshqa ism tanlang.`
         };
       }
     }
     
-    // Проверка на специальные символы (разрешены только буквы, цифры, пробелы и дефисы)
+    // Проверка на специальные символы
     const validCharsRegex = /^[a-zA-Zа-яА-ЯёЁўЎғҒқҚҳҲөӨүҮ0-9\s\-']+$/;
     if (!validCharsRegex.test(name)) {
       return { 
@@ -191,8 +182,14 @@ const Settings = () => {
       try {
         await supabase
           .from('profiles')
-          .update({ preferred_language: lang })
+          .update({ 
+            preferred_language: lang,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', user.id);
+        
+        // Сохраняем в localStorage как резервную копию
+        localStorage.setItem('preferred_language', lang);
       } catch (err) {
         console.error('Ошибка сохранения языка:', err);
       }
@@ -218,27 +215,47 @@ const Settings = () => {
 
     // Проверка размера файла (макс 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setMessage('Rasm hajmi 5MB dan oshmasligi kerak!');
+      setMessage(t('photo_too_large') || 'Rasm hajmi 5MB dan oshmasligi kerak!');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
 
     // Проверка типа файла
-    if (!file.type.startsWith('image/')) {
-      setMessage('Faqat rasm fayllari yuklash mumkin! (JPG, PNG, GIF)');
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+      setMessage(t('invalid_photo_format') || 'Faqat rasm fayllari yuklash mumkin! (JPG, PNG, GIF, WebP)');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
 
     setLoading(true);
-    setMessage('Rasm yuklanmoqda...');
+    setMessage(t('photo_uploading'));
 
     try {
+      // Создаем превью для пользователя
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setAvatar(e.target.result);
+      };
+      reader.readAsDataURL(file);
+
+      // Удаляем старый аватар если он существует в storage
+      if (avatar && avatar.includes('supabase.co/storage/v1/object/public/avatars/')) {
+        try {
+          const oldFileName = avatar.split('/').pop();
+          await supabase.storage
+            .from('avatars')
+            .remove([`${user.id}/${oldFileName}`]);
+        } catch (deleteError) {
+          console.warn('Старый аватар не удален:', deleteError);
+        }
+      }
+
       // Создаем уникальное имя файла
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}/${Date.now()}.${fileExt}`;
       
-      // Загружаем в Supabase Storage (предполагается, что bucket 'avatars' существует)
+      // Загружаем в Supabase Storage
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file, {
@@ -264,25 +281,22 @@ const Settings = () => {
 
       if (updateError) throw updateError;
 
-      // Обновляем локальное состояние
-      setAvatar(publicUrl);
-      setMessage('Rasm muvaffaqiyatli yuklandi! ✅');
+      setMessage(t('photo_uploaded'));
       
-      // Показываем сообщение об успехе
       setTimeout(() => {
-        setMessage('Profil yangilandi! Барча маълумотлар базада сақланди.');
+        setMessage(t('profile_updated'));
         setTimeout(() => setMessage(''), 5000);
       }, 1000);
 
     } catch (err) {
       console.error('Ошибка загрузки аватара:', err);
+      setMessage(t('photo_upload_error') || '❌ Rasm yuklashda xatolik!');
       
-      // Если нет storage, используем base64 как fallback
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64Avatar = e.target.result;
-        
-        try {
+      // Если нет storage, пробуем сохранить как base64
+      try {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          const base64Avatar = e.target.result;
           const { error } = await supabase
             .from('profiles')
             .update({ 
@@ -291,15 +305,14 @@ const Settings = () => {
             })
             .eq('id', user.id);
 
-          if (error) throw error;
-          
-          setAvatar(base64Avatar);
-          setMessage('Rasm muvaffaqiyatli yuklandi! (Base64) ✅');
-        } catch (fallbackError) {
-          setMessage('Rasm yuklashda xatolik!');
-        }
-      };
-      reader.readAsDataURL(file);
+          if (!error) {
+            setMessage(t('photo_uploaded_base64') || 'Rasm muvaffaqiyatli yuklandi! (Base64)');
+          }
+        };
+        reader.readAsDataURL(file);
+      } catch (fallbackError) {
+        console.error('Fallback error:', fallbackError);
+      }
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(''), 5000);
@@ -317,10 +330,10 @@ const Settings = () => {
     }
 
     setLoading(true);
-    setMessage('Saqlanmoqda...');
+    setMessage(t('saving') || 'Saqlanmoqda...');
 
     try {
-      // Генерируем username из имени (убираем пробелы, приводим к нижнему регистру)
+      // Генерируем username из имени
       const username = name
         .toLowerCase()
         .replace(/\s+/g, '_')
@@ -345,42 +358,56 @@ const Settings = () => {
 
       // Проверяем, что данные обновились
       if (data) {
-        setMessage('✅ Profil muvaffaqiyatli saqlandi! Барча маълумотлар базада сақланди.');
+        setMessage(t('profile_saved'));
         
         // Показываем подробности обновления
         setTimeout(() => {
-          setMessage(`✅ Yangilangan: Ism → ${data.full_name}, Username → ${data.username}, Til → ${data.preferred_language}`);
+          setMessage(t('all_data_saved'));
           setTimeout(() => setMessage(''), 5000);
         }, 1000);
       }
 
     } catch (err) {
       console.error('Ошибка сохранения профиля:', err);
-      setMessage('❌ Xatolik yuz berdi: ' + (err.message || 'Noma\'lum xatolik'));
+      setMessage(t('save_error') || '❌ Xatolik yuz berdi: ' + (err.message || 'Noma\'lum xatolik'));
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(''), 5000);
     }
   };
 
-  // Форматирование сообщения
-  const renderMessage = () => {
-    if (!message) return null;
+  // Функция удаления аватара
+  const handleRemoveAvatar = async () => {
+    if (!window.confirm(t('confirm_delete_avatar') || 'Haqiqatan ham rasmni o\'chirmoqchimisiz?')) return;
     
-    const isError = message.includes('Xatolik') || message.includes('taqiqlangan');
-    const isSuccess = message.includes('✅') || message.includes('saqlandi');
-    
-    return (
-      <div className={`text-center p-4 rounded-2xl mb-6 text-xl font-bold ${
-        isError 
-          ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' 
-          : isSuccess
-          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-          : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-      }`}>
-        {message}
-      </div>
-    );
+    setLoading(true);
+    try {
+      // Удаляем из storage
+      if (avatar.includes('supabase.co/storage/v1/object/public/avatars/')) {
+        const fileName = avatar.split('/').pop();
+        await supabase.storage
+          .from('avatars')
+          .remove([`${user.id}/${fileName}`]);
+      }
+      
+      // Обновляем профиль
+      await supabase
+        .from('profiles')
+        .update({ 
+          avatar_url: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+      
+      // Очищаем локальное состояние
+      setAvatar('');
+      setMessage(t('avatar_deleted') || '✅ Rasm muvaffaqiyatli o\'chirildi!');
+    } catch (err) {
+      setMessage(t('delete_error') || '❌ Rasm o\'chirishda xatolik!');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setMessage(''), 3000);
+    }
   };
 
   return (
@@ -390,16 +417,24 @@ const Settings = () => {
         {/* Приветствие */}
         <div className="text-center mb-12">
           <h1 className="text-6xl md:text-7xl font-black mb-4 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-            {t('settings') || 'Sozlamalar'}
+            {t('settings')}
           </h1>
           <p className="text-2xl text-gray-700 dark:text-gray-300">
-            Salom, <span className="font-bold text-purple-600 dark:text-yellow-400">{name || user?.email}</span> 👨‍✈️
+            {t('welcome_message')} <span className="font-bold text-purple-600 dark:text-yellow-400">{name || user?.email}</span> 👨‍✈️
           </p>
-          <p className="text-lg mt-2 opacity-80">Sizning shaxsiy boshqaruv panelingiz</p>
+          <p className="text-lg mt-2 opacity-80">{t('personal_control_panel')}</p>
         </div>
 
         {/* Сообщения */}
-        {renderMessage()}
+        {message && (
+          <div className={`text-center p-4 rounded-2xl mb-6 text-xl font-bold ${
+            message.includes('❌') || message.includes('Xatolik') || message.includes('taqiqlangan')
+              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+              : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+          }`}>
+            {message}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Левая колонка: Аватар + Статистика */}
@@ -409,7 +444,7 @@ const Settings = () => {
               <div className="w-40 h-40 mx-auto rounded-full overflow-hidden border-4 border-purple-500 shadow-xl mb-6 relative group">
                 <img
                   src={avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=6366f1&color=fff&size=256`}
-                  alt="Avatar"
+                  alt={t('avatar')}
                   className="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
                 />
                 <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -417,7 +452,7 @@ const Settings = () => {
                     onClick={() => fileInputRef.current?.click()}
                     className="bg-white text-black px-4 py-2 rounded-full font-bold hover:bg-gray-100 transition"
                   >
-                    📷 O'zgartirish
+                    📷 {t('change')}
                   </button>
                 </div>
               </div>
@@ -435,39 +470,48 @@ const Settings = () => {
                 disabled={loading}
                 className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-full font-bold hover:scale-105 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Yuklanmoqda...' : '🖼️ Rasmni o‘zgartirish'}
+                {loading ? t('photo_uploading') : `🖼️ ${t('change_photo')}`}
               </button>
               
+              {avatar && avatar.includes('supabase.co') && (
+                <button
+                  onClick={handleRemoveAvatar}
+                  className="mt-3 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold transition"
+                >
+                  🗑️ {t('delete_avatar') || 'Rasmni o\'chirish'}
+                </button>
+              )}
+              
               {premiumStatus && (
-                <div className="mt-6 text-2xl animate-pulse">⭐ PREMIUM</div>
+                <div className="mt-6 text-2xl animate-pulse">⭐ {t('premium')}</div>
               )}
               
               <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                Rasm o'lchami: maks 5MB
+                {t('photo_size_limit')}
                 <br />
-                Formatlar: JPG, PNG, GIF
+                {t('photo_formats')}
               </div>
             </div>
 
             {/* Статистика */}
             <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-3xl shadow-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-6 text-center">📊 Sizning Progressingiz</h3>
+              <h3 className="text-2xl font-bold mb-6 text-center">📊 {t('your_progress')}</h3>
               <div className="space-y-4 text-xl">
                 <div className="flex justify-between">
-                  <span>O‘rganilgan kurslar</span> 
+                  <span>{t('courses_learned')}</span> 
                   <b>{stats.coursesCompleted}</b>
                 </div>
                 <div className="flex justify-between">
-                  <span>Bajarilgan darslar</span> 
+                  <span>{t('lessons_completed')}</span> 
                   <b>{stats.lessonsCompleted}</b>
                 </div>
                 <div className="flex justify-between">
-                  <span>Muvaffaqiyat darajasi</span> 
+                  <span>{t('success_rate')}</span> 
                   <b className="text-yellow-300">{stats.successRate}%</b>
                 </div>
                 <div className="mt-6 pt-6 border-t border-white/20">
                   <div className="text-center text-sm opacity-80">
-                    Har kuni dars qilishni unutmang! 🚀
+                    {t('dont_forget_study')} 🚀
                   </div>
                 </div>
               </div>
@@ -479,27 +523,27 @@ const Settings = () => {
             {/* Профиль */}
             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8">
               <h2 className="text-3xl font-bold mb-6 flex items-center gap-3">
-                👤 {t('profile_settings') || 'Profil sozlamalari'}
+                👤 {t('profile_settings')}
               </h2>
               <div className="space-y-6">
                 <div>
                   <label className="block text-xl font-semibold mb-2">
-                    {t('name') || 'Ism va Familiya'} 
-                    <span className="text-sm text-gray-500 ml-2">(Majburiy)</span>
+                    {t('full_name')} 
+                    <span className="text-sm text-gray-500 ml-2">({t('required')})</span>
                   </label>
                   <input
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="w-full px-6 py-4 rounded-2xl border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 focus:border-purple-500 text-xl"
-                    placeholder="Masalan: Azizbek Alimov"
+                    placeholder={t('example_name')}
                   />
                   <div className="mt-2 text-sm text-gray-500">
-                    Kamida 2 ta belgi. Taqiqlangan so'zlar: Admin, EduHelper, 18+ so'zlar va boshqalar.
+                    {t('min_chars')} {t('forbidden_words_info')}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xl font-semibold mb-2">📧 Email manzili</label>
+                  <label className="block text-xl font-semibold mb-2">{t('email_address')}</label>
                   <input
                     type="email"
                     value={user?.email || ''}
@@ -507,7 +551,7 @@ const Settings = () => {
                     className="w-full px-6 py-4 rounded-2xl bg-gray-100 dark:bg-gray-900 text-xl cursor-not-allowed"
                   />
                   <div className="mt-2 text-sm text-gray-500">
-                    Email manzilni o'zgartirish uchun support@eduhelper.uz ga murojaat qiling.
+                    {t('contact_support_email')}
                   </div>
                 </div>
               </div>
@@ -516,7 +560,7 @@ const Settings = () => {
             {/* Язык и тема */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8">
-                <h3 className="text-2xl font-bold mb-6">🌍 Dastur tili</h3>
+                <h3 className="text-2xl font-bold mb-6">🌍 {t('app_language')}</h3>
                 <div className="space-y-4">
                   <button
                     onClick={() => changeLanguage('uz')}
@@ -526,7 +570,7 @@ const Settings = () => {
                         : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
-                    🇺🇿 O‘zbekcha
+                    🇺🇿 {t('uzbek')}
                   </button>
                   <button
                     onClick={() => changeLanguage('ru')}
@@ -536,16 +580,16 @@ const Settings = () => {
                         : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
-                    🇷🇺 Русский
+                    🇷🇺 {t('russian')}
                   </button>
                 </div>
                 <div className="mt-6 text-center text-sm text-gray-500">
-                  Til darhol o'zgaradi va bazada saqlanadi
+                  {t('language_changes_instantly')}
                 </div>
               </div>
 
               <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8">
-                <h3 className="text-2xl font-bold mb-6">🎨 Interfeys mavzusi</h3>
+                <h3 className="text-2xl font-bold mb-6">🎨 {t('interface_theme')}</h3>
                 <button
                   onClick={toggleDarkMode}
                   className={`w-full py-5 rounded-2xl text-2xl font-bold transition-all flex items-center justify-center gap-4 ${
@@ -554,12 +598,12 @@ const Settings = () => {
                       : 'bg-yellow-400 text-gray-900 hover:bg-yellow-500'
                   }`}
                 >
-                  {darkMode ? '🌚 Tungi rejim' : '☀️ Kunduzgi rejim'}
+                  {darkMode ? `🌚 ${t('night_mode')}` : `☀️ ${t('day_mode')}`}
                 </button>
                 
                 <div className="mt-6">
                   <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-xl">🔔 Bildirishnomalar</span>
+                    <span className="text-xl">🔔 {t('notifications')}</span>
                     <div className="relative">
                       <input
                         type="checkbox"
@@ -578,7 +622,7 @@ const Settings = () => {
                 </div>
                 
                 <div className="mt-6 text-center text-sm text-gray-500">
-                  Mavzu va bildirishnomalar brauzeringizda saqlanadi
+                  {t('theme_saved_browser')}
                 </div>
               </div>
             </div>
@@ -594,55 +638,32 @@ const Settings = () => {
                     : 'bg-gradient-to-r from-green-500 to-blue-600 hover:scale-110 hover:shadow-3xl'
                 }`}
               >
-                {loading ? '⏳ Saqlanmoqda...' : '🚀 Barcha o‘zgarishlarni saqlash'}
+                {loading ? `⏳ ${t('loading')}` : `🚀 ${t('save_all_changes')}`}
               </button>
               
               <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                Tugmani bosganda: <br />
-                1. Ismingiz tekshiriladi va bazaga yoziladi <br />
-                2. Tanlangan til saqlanadi <br />
-                3. Barcha ma'lumotlar yangilanadi
-              </div>
-            </div>
-
-            {/* Информация о безопасности */}
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-3xl shadow-2xl p-8">
-              <h3 className="text-3xl font-bold mb-6 text-yellow-600 dark:text-yellow-400 flex items-center gap-3">
-                ⚠️ Diqqat! Taqiqlangan so'zlar
-              </h3>
-              <div className="space-y-4">
-                <p className="text-lg">
-                  Ismingizda quyidagi so'zlar ishlatilishi <strong>taqiqlanadi</strong>:
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {forbiddenWords.slice(0, 12).map((word, index) => (
-                    <div 
-                      key={index} 
-                      className="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 px-3 py-2 rounded-lg text-center"
-                    >
-                      {word}
-                    </div>
-                  ))}
-                </div>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-4">
-                  Agar ismingizda taqiqlangan so'z bo'lsa, profil saqlanmaydi va xabar beriladi.
-                </p>
+                {t('save_button_info')} <br />
+                1. {t('save_step1')} <br />
+                2. {t('save_step2')} <br />
+                3. {t('save_step3')}
               </div>
             </div>
 
             {/* Аккаунт */}
             <div className="bg-red-50 dark:bg-red-900/30 rounded-3xl shadow-2xl p-8">
-              <h3 className="text-3xl font-bold mb-6 text-red-600 dark:text-red-400">⚙️ Akkaunt boshqaruvi</h3>
+              <h3 className="text-3xl font-bold mb-6 text-red-600 dark:text-red-400">
+                ⚙️ {t('account_management')}
+              </h3>
               <div className="space-y-4">
                 <button
                   onClick={logout}
                   className="w-full py-5 bg-red-600 hover:bg-red-700 text-white font-bold text-xl rounded-2xl transition-all hover:scale-105 flex items-center justify-center gap-3"
                 >
                   <span>🚪</span>
-                  <span>Hisobdan chiqish</span>
+                  <span>{t('logout_button')}</span>
                 </button>
                 <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-                  Chiqish qilganda, sizning ma'lumotlaringiz saqlanib qoladi va keyinroq qayta kira olasiz.
+                  {t('logout_info')}
                 </div>
               </div>
             </div>
@@ -651,9 +672,9 @@ const Settings = () => {
 
         {/* Подвал с информацией */}
         <div className="mt-12 text-center text-gray-500 dark:text-gray-400 text-sm">
-          <p>© 2024 EduHelper. Barcha huquqlar himoyalangan.</p>
+          <p>{t('copyright')}</p>
           <p className="mt-2">
-            Profil ma'lumotlari: <strong>Supabase PostgreSQL</strong> bazasida xavfsiz saqlanadi.
+            {t('profile_data_info')}
           </p>
         </div>
       </div>
