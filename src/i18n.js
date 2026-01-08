@@ -43,14 +43,15 @@ const getFallbackResources = () => ({
       "name": "Ism",
       "email": "Email",
       "language": "Til",
-      "uzbek": "O‘zbekcha",
-      "russian": "Русский",
+      "uzbek": "O'zbekcha",
+      "russian": "Ruscha",
+      "english": "Inglizcha",
       "notifications": "Bildirishnomalar",
       "dark_mode": "Tungi rejim",
-      "save_changes": "O‘zgarishlarni saqlash",
+      "save_changes": "O'zgarishlarni saqlash",
       "account": "Akkaunt",
       "logout": "Chiqish",
-      "delete_account": "Akkauntni o‘chirish",
+      "delete_account": "Akkauntni o'chirish",
       "loading": "Yuklanmoqda...",
       "success_saved": "Sozlamalar muvaffaqiyatli saqlandi!",
     }
@@ -62,8 +63,9 @@ const getFallbackResources = () => ({
       "name": "Имя",
       "email": "Email",
       "language": "Язык",
-      "uzbek": "O‘zbekcha",
+      "uzbek": "Узбекский",
       "russian": "Русский",
+      "english": "Английский",
       "notifications": "Уведомления",
       "dark_mode": "Тёмная тема",
       "save_changes": "Сохранить изменения",
@@ -72,6 +74,26 @@ const getFallbackResources = () => ({
       "delete_account": "Удалить аккаунт",
       "loading": "Загрузка...",
       "success_saved": "Настройки успешно сохранены!",
+    }
+  },
+  en: {
+    translation: {
+      "settings": "Settings",
+      "profile_settings": "Profile Settings",
+      "name": "Name",
+      "email": "Email",
+      "language": "Language",
+      "uzbek": "Uzbek",
+      "russian": "Russian",
+      "english": "English",
+      "notifications": "Notifications",
+      "dark_mode": "Dark Mode",
+      "save_changes": "Save Changes",
+      "account": "Account",
+      "logout": "Logout",
+      "delete_account": "Delete Account",
+      "loading": "Loading...",
+      "success_saved": "Settings saved successfully!",
     }
   }
 });
@@ -96,7 +118,7 @@ const initI18n = async () => {
         lookupLocalStorage: 'preferred_language'
       },
       react: {
-        useSuspense: false // Отключаем Suspense для совместимости
+        useSuspense: false
       }
     });
 };

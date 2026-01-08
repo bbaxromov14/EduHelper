@@ -19,11 +19,6 @@ const Settings = () => {
   const [premiumStatus, setPremiumStatus] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [stats, setStats] = useState({
-    coursesCompleted: 0,
-    lessonsCompleted: 0,
-    successRate: 0,
-  });
 
   // Список запрещенных слов и имен
   const forbiddenWords = [
@@ -77,9 +72,6 @@ const Settings = () => {
               setAvatar(profileData.avatar_url);
             }
           }
-
-          // Загружаем статистику
-          await loadUserStats(user.id);
         } catch (err) {
           console.error('Ошибка загрузки настроек:', err);
         }
@@ -95,43 +87,6 @@ const Settings = () => {
     loadSettings();
   }, [user, i18n]);
 
-  // Загрузка статистики пользователя
-  const loadUserStats = async (userId) => {
-    try {
-      // Получаем прогресс пользователя
-      const { data: progressData, error } = await supabase
-        .from('user_progress')
-        .select('course_id, completed, points, score')
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      // Получаем завершенные курсы
-      const { data: completionsData } = await supabase
-        .from('course_completions')
-        .select('course_id')
-        .eq('user_id', userId);
-
-      // Рассчитываем статистику
-      const completedLessons = progressData?.filter(p => p.completed).length || 0;
-      const totalPoints = progressData?.reduce((sum, p) => sum + (p.points || 0), 0) || 0;
-      const completedCourses = completionsData?.length || 0;
-      
-      // Процент успеха (минимум 50%, максимум 94%)
-      const successRate = completedLessons > 0 
-        ? Math.min(94, Math.max(50, Math.round((totalPoints / (completedLessons * 100)) * 100)))
-        : 50;
-
-      setStats({
-        coursesCompleted: completedCourses,
-        lessonsCompleted: completedLessons,
-        successRate: successRate,
-      });
-    } catch (err) {
-      console.error('Ошибка загрузки статистики:', err);
-    }
-  };
-
   // Проверка имени на запрещенные слова
   const validateName = (name) => {
     if (!name || name.trim().length < 2) {
@@ -139,7 +94,7 @@ const Settings = () => {
     }
     
     if (name.length > 50) {
-      return { valid: false, message: 'Ism 50 ta belgidan oshmasligi kerak' };
+      return { valid: false, message: t('name_too_long') || 'Name must not exceed 50 characters' };
     }
     
     const nameLower = name.toLowerCase();
@@ -150,7 +105,7 @@ const Settings = () => {
         return { 
           valid: false, 
           message: t('name_contains_forbidden', { word: word }) || 
-                  `Ismda "${word}" so'zi taqiqlangan. Iltimos, boshqa ism tanlang.`
+                  `Name contains forbidden word "${word}". Please choose another name.`
         };
       }
     }
@@ -160,13 +115,13 @@ const Settings = () => {
     if (!validCharsRegex.test(name)) {
       return { 
         valid: false, 
-        message: 'Ismda faqat harflar, raqamlar, probellar va tire belgilari ishlatilishi mumkin' 
+        message: t('invalid_name_chars') || 'Name can only contain letters, numbers, spaces and hyphens' 
       };
     }
     
     // Проверка на повторяющиеся пробелы
     if (/\s{2,}/.test(name)) {
-      return { valid: false, message: 'Ismda ketma-ket probellar ishlatilishi mumkin emas' };
+      return { valid: false, message: t('no_double_spaces') || 'Name cannot contain consecutive spaces' };
     }
     
     return { valid: true, message: '' };
@@ -215,7 +170,7 @@ const Settings = () => {
 
     // Проверка размера файла (макс 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setMessage(t('photo_too_large') || 'Rasm hajmi 5MB dan oshmasligi kerak!');
+      setMessage(t('photo_too_large'));
       setTimeout(() => setMessage(''), 3000);
       return;
     }
@@ -223,7 +178,7 @@ const Settings = () => {
     // Проверка типа файла
     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setMessage(t('invalid_photo_format') || 'Faqat rasm fayllari yuklash mumkin! (JPG, PNG, GIF, WebP)');
+      setMessage(t('invalid_photo_format'));
       setTimeout(() => setMessage(''), 3000);
       return;
     }
@@ -290,7 +245,7 @@ const Settings = () => {
 
     } catch (err) {
       console.error('Ошибка загрузки аватара:', err);
-      setMessage(t('photo_upload_error') || '❌ Rasm yuklashda xatolik!');
+      setMessage(t('photo_upload_error'));
       
       // Если нет storage, пробуем сохранить как base64
       try {
@@ -306,7 +261,7 @@ const Settings = () => {
             .eq('id', user.id);
 
           if (!error) {
-            setMessage(t('photo_uploaded_base64') || 'Rasm muvaffaqiyatli yuklandi! (Base64)');
+            setMessage(t('photo_uploaded_base64'));
           }
         };
         reader.readAsDataURL(file);
@@ -330,7 +285,7 @@ const Settings = () => {
     }
 
     setLoading(true);
-    setMessage(t('saving') || 'Saqlanmoqda...');
+    setMessage(t('saving'));
 
     try {
       // Генерируем username из имени
@@ -369,7 +324,7 @@ const Settings = () => {
 
     } catch (err) {
       console.error('Ошибка сохранения профиля:', err);
-      setMessage(t('save_error') || '❌ Xatolik yuz berdi: ' + (err.message || 'Noma\'lum xatolik'));
+      setMessage(t('save_error') + ': ' + (err.message || 'Unknown error'));
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(''), 5000);
@@ -378,7 +333,7 @@ const Settings = () => {
 
   // Функция удаления аватара
   const handleRemoveAvatar = async () => {
-    if (!window.confirm(t('confirm_delete_avatar') || 'Haqiqatan ham rasmni o\'chirmoqchimisiz?')) return;
+    if (!window.confirm(t('confirm_delete_avatar'))) return;
     
     setLoading(true);
     try {
@@ -401,9 +356,9 @@ const Settings = () => {
       
       // Очищаем локальное состояние
       setAvatar('');
-      setMessage(t('avatar_deleted') || '✅ Rasm muvaffaqiyatli o\'chirildi!');
+      setMessage(t('avatar_deleted'));
     } catch (err) {
-      setMessage(t('delete_error') || '❌ Rasm o\'chirishda xatolik!');
+      setMessage(t('delete_error'));
     } finally {
       setLoading(false);
       setTimeout(() => setMessage(''), 3000);
@@ -428,7 +383,7 @@ const Settings = () => {
         {/* Сообщения */}
         {message && (
           <div className={`text-center p-4 rounded-2xl mb-6 text-xl font-bold ${
-            message.includes('❌') || message.includes('Xatolik') || message.includes('taqiqlangan')
+            message.includes('❌') || message.includes('Xatolik') || message.toLowerCase().includes('error') || message.toLowerCase().includes('taqiqlangan')
               ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
               : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
           }`}>
@@ -437,7 +392,7 @@ const Settings = () => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Левая колонка: Аватар + Статистика */}
+          {/* Левая колонка: Аватар */}
           <div className="space-y-8">
             {/* Аватар */}
             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 text-center">
@@ -478,7 +433,7 @@ const Settings = () => {
                   onClick={handleRemoveAvatar}
                   className="mt-3 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-full text-sm font-bold transition"
                 >
-                  🗑️ {t('delete_avatar') || 'Rasmni o\'chirish'}
+                  🗑️ {t('delete_avatar')}
                 </button>
               )}
               
@@ -490,30 +445,6 @@ const Settings = () => {
                 {t('photo_size_limit')}
                 <br />
                 {t('photo_formats')}
-              </div>
-            </div>
-
-            {/* Статистика */}
-            <div className="bg-gradient-to-br from-blue-600 to-purple-600 rounded-3xl shadow-2xl p-8 text-white">
-              <h3 className="text-2xl font-bold mb-6 text-center">📊 {t('your_progress')}</h3>
-              <div className="space-y-4 text-xl">
-                <div className="flex justify-between">
-                  <span>{t('courses_learned')}</span> 
-                  <b>{stats.coursesCompleted}</b>
-                </div>
-                <div className="flex justify-between">
-                  <span>{t('lessons_completed')}</span> 
-                  <b>{stats.lessonsCompleted}</b>
-                </div>
-                <div className="flex justify-between">
-                  <span>{t('success_rate')}</span> 
-                  <b className="text-yellow-300">{stats.successRate}%</b>
-                </div>
-                <div className="mt-6 pt-6 border-t border-white/20">
-                  <div className="text-center text-sm opacity-80">
-                    {t('dont_forget_study')} 🚀
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -581,6 +512,16 @@ const Settings = () => {
                     }`}
                   >
                     🇷🇺 {t('russian')}
+                  </button>
+                  <button
+                    onClick={() => changeLanguage('en')}
+                    className={`w-full py-5 rounded-2xl text-2xl font-bold transition-all ${
+                      language === 'en' 
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-xl scale-105' 
+                        : 'bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    🇬🇧 {t('english')}
                   </button>
                 </div>
                 <div className="mt-6 text-center text-sm text-gray-500">
