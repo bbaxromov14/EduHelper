@@ -52,7 +52,7 @@ const Settings = () => {
                     // Загружаем профиль пользователя
                     const { data: profileData, error } = await supabase
                         .from('profiles')
-                        .select('preferred_language, full_name, avatar_url, username')
+                        .select('preferred_language, full_name, avatar_url, username, theme_preference')
                         .eq('id', user.id)
                         .single();
 
@@ -72,21 +72,47 @@ const Settings = () => {
                         if (profileData.avatar_url) {
                             setAvatar(profileData.avatar_url);
                         }
+
+                        // Устанавливаем тему из профиля пользователя
+                        if (profileData.theme_preference) {
+                            const isDark = profileData.theme_preference === "dark";
+                            setDarkMode(isDark);
+                            applyTheme(isDark);
+                        } else {
+                            // Если нет в профиле, проверяем localStorage и системные настройки
+                            const savedDark = localStorage.getItem('darkMode') === 'true';
+                            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                            const isDark = savedDark || systemDark;
+                            setDarkMode(isDark);
+                            applyTheme(isDark);
+                        }
                     }
                 } catch (err) {
                     console.error('Ошибка загрузки настроек:', err);
                 }
+            } else {
+                // Для неавторизованных пользователей используем localStorage или системные настройки
+                const savedDark = localStorage.getItem('darkMode') === 'true';
+                const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const isDark = savedDark || systemDark;
+                setDarkMode(isDark);
+                applyTheme(isDark);
             }
-
-            // Тёмная тема из localStorage или системы
-            const savedDark = localStorage.getItem('darkMode') === 'true';
-            const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-            setDarkMode(savedDark || systemDark);
-            if (savedDark || systemDark) document.documentElement.classList.add('dark');
         };
 
         loadSettings();
     }, [user, i18n]);
+
+    // Применение темы
+    const applyTheme = (isDark) => {
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.setAttribute('data-theme', 'light');
+        }
+    };
 
     // Проверка имени на запрещенные слова
     const validateName = (name) => {
@@ -152,15 +178,34 @@ const Settings = () => {
         }
     };
 
-    // Переключение темы
-    const toggleDarkMode = () => {
+    // Переключение темы с сохранением в Supabase
+    const toggleDarkMode = async () => {
         const newMode = !darkMode;
         setDarkMode(newMode);
+        applyTheme(newMode);
+
+        // Сохраняем в localStorage для неавторизованных пользователей
         localStorage.setItem('darkMode', newMode);
-        if (newMode) {
-            document.documentElement.classList.add('dark');
+
+        // Сохраняем в Supabase если пользователь авторизован
+        if (user?.id) {
+            try {
+                const { error } = await supabase
+                    .from('profiles')
+                    .update({
+                        theme_preference: newMode ? "dark" : "light",
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', user.id);
+
+                if (error) throw error;
+            } catch (err) {
+                console.error('Ошибка сохранения темы:', err);
+                // В случае ошибки, сохраняем только в localStorage
+                localStorage.setItem('theme', newMode ? 'dark' : 'light');
+            }
         } else {
-            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', newMode ? 'dark' : 'light');
         }
     };
 
@@ -300,6 +345,7 @@ const Settings = () => {
                 full_name: name.trim(),
                 username: username,
                 preferred_language: language,
+                theme_preference: darkMode ? "dark" : "light", // Сохраняем тему в профиле
                 updated_at: new Date().toISOString(),
             };
 
