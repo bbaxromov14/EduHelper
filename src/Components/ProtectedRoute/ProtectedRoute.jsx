@@ -16,7 +16,6 @@ const ProtectedRoute = ({
   
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminLoading, setAdminLoading] = useState(false);
-  const [permissionError, setPermissionError] = useState(null);
   const [checking, setChecking] = useState(true);
 
   // Проверка прав и авторизации
@@ -33,53 +32,47 @@ const ProtectedRoute = ({
       // Если требуется проверка администратора
       if (adminOnly && user?.email) {
         setAdminLoading(true);
-        setPermissionError(null);
         
         try {
-          // 1. Проверяем по таблице admin_users в Supabase
+          // Способ 1: Сначала проверим статические email
+          const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
+          
+          if (fallbackAdmins.includes(user.email)) {
+            setIsAdmin(true);
+            setAdminLoading(false);
+            setChecking(false);
+            return;
+          }
+          
+          // Способ 2: Проверяем в базе данных с безопасным запросом
           const { data: adminUsers, error: adminError } = await supabase
             .from('admin_users')
             .select('email, role, is_active')
             .eq('is_active', true)
-            .in('role', ['admin', 'super_admin']);
-
+            .eq('email', user.email) // Ищем конкретный email
+            .in('role', ['admin', 'super_admin']); // Проверяем роль
+          
           if (adminError) {
             console.error('Admin check database error:', adminError);
-            throw adminError;
-          }
-
-          const adminEmails = adminUsers?.map(u => u.email) || [];
-          
-          // 2. Fallback на статичные email
-          const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
-          
-          // 3. Проверяем email пользователя
-          const isAdminUser = 
-            adminEmails.includes(user.email) || 
-            fallbackAdmins.includes(user.email) ||
-            user.role === 'admin' || 
-            user.role === 'super_admin';
-          
-          setIsAdmin(isAdminUser);
-          
-          // 4. Если не админ, устанавливаем ошибку
-          if (!isAdminUser) {
-            setPermissionError('access_denied');
+            // Если ошибка БД, проверяем только статические email
+            setIsAdmin(fallbackAdmins.includes(user.email));
+          } else {
+            // Если нашли пользователя в таблице админов
+            const isAdminUser = adminUsers && adminUsers.length > 0;
+            setIsAdmin(isAdminUser);
           }
           
         } catch (error) {
           console.error('Admin check error:', error);
-          // Если база недоступна, проверяем только статичные email
+          // При любой ошибке проверяем статические email
           const fallbackAdmins = ['bbaxromov14@gmail.com', 'eduhelperuz@gmail.com'];
-          const isFallbackAdmin = fallbackAdmins.includes(user.email);
-          setIsAdmin(isFallbackAdmin);
-          
-          if (!isFallbackAdmin) {
-            setPermissionError('access_denied');
-          }
+          setIsAdmin(fallbackAdmins.includes(user.email));
         } finally {
           setAdminLoading(false);
         }
+      } else {
+        // Если не требуется проверка админа, сразу завершаем
+        setIsAdmin(false);
       }
       
       setChecking(false);
@@ -88,7 +81,7 @@ const ProtectedRoute = ({
     // Добавляем небольшую задержку для предотвращения мигания
     const timer = setTimeout(() => {
       checkPermissions();
-    }, 300);
+    }, 100);
 
     return () => clearTimeout(timer);
   }, [adminOnly, user, isAuthenticated, location]);
@@ -101,9 +94,6 @@ const ProtectedRoute = ({
           <div className="inline-block h-14 w-14 animate-spin rounded-full border-[5px] border-solid border-blue-600 border-r-transparent dark:border-blue-500"></div>
           <p className="mt-6 text-xl font-medium text-gray-700 dark:text-gray-300">
             {t('loading') || 'Yuklanmoqda...'}
-          </p>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            {t('redirecting_to_login') || 'Tekshirilmoqda...'}
           </p>
         </div>
       </div>
@@ -123,9 +113,6 @@ const ProtectedRoute = ({
           <div className="inline-block h-14 w-14 animate-spin rounded-full border-[5px] border-solid border-green-600 border-r-transparent dark:border-green-500"></div>
           <p className="mt-6 text-xl font-medium text-gray-700 dark:text-gray-300">
             {t('checking_admin') || 'Admin tekshirilmoqda...'}
-          </p>
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            {t('loading') || 'Kuting...'}
           </p>
         </div>
       </div>
@@ -151,11 +138,9 @@ const ProtectedRoute = ({
             {t('not_authorized') || 'Sizga ruxsat berilmagan'}
           </p>
           
-          {permissionError === 'access_denied' && (
-            <p className="text-gray-500 dark:text-gray-400 text-sm mb-8">
-              {t('admin_only') || 'Bu sahifani faqat administratorlar ko\'ra oladi'}
-            </p>
-          )}
+          <p className="text-gray-500 dark:text-gray-400 text-sm mb-8">
+            {t('admin_only') || 'Bu sahifani faqat administratorlar ko\'ra oladi'}
+          </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
@@ -173,13 +158,17 @@ const ProtectedRoute = ({
             </button>
           </div>
           
+          {/* Отладочная информация для разработки */}
           {process.env.NODE_ENV === 'development' && (
             <div className="mt-8 p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-left">
-              <p className="text-sm font-mono text-gray-600 dark:text-gray-400">
+              <p className="text-sm font-mono text-gray-600 dark:text-gray-400 mb-2">
                 <span className="font-semibold">Email:</span> {user.email}
               </p>
               <p className="text-sm font-mono text-gray-600 dark:text-gray-400">
-                <span className="font-semibold">Admin status:</span> {isAdmin ? 'Yes' : 'No'}
+                <span className="font-semibold">Admin status:</span> {isAdmin ? '✅ Yes' : '❌ No'}
+              </p>
+              <p className="text-sm font-mono text-gray-600 dark:text-gray-400 mt-2">
+                <span className="font-semibold">Path:</span> {location.pathname}
               </p>
             </div>
           )}
