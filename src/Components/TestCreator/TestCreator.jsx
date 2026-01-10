@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useTranslation } from 'react-i18next'; // Добавляем хук для переводов
+import { supabase } from '../../lib/supabase'; // Импортируем Supabase клиент
 
 const TestCreator = ({ courseId, lessonId }) => {
-  const { t } = useTranslation(); // Инициализируем хук переводов
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState({
     text: '',
@@ -15,32 +13,24 @@ const TestCreator = ({ courseId, lessonId }) => {
     videoTimestamp: '00:00'
   });
   const [testSettings, setTestSettings] = useState({
-    title: t('test_for_lesson') || 'Тест по уроку',
+    title: 'Тест по уроку',
     passingScore: 70,
-    timeLimit: 300,
+    timeLimit: 300, // 5 минут в секундах
     attemptsAllowed: 3,
     showResults: true
   });
 
-  // Обновляем заголовок теста при изменении языка
-  React.useEffect(() => {
-    setTestSettings(prev => ({
-      ...prev,
-      title: t('test_for_lesson') || 'Тест по уроку'
-    }));
-  }, [t]);
-
   // Добавить вопрос
   const addQuestion = () => {
     if (!currentQuestion.text.trim()) {
-      alert(t('enter_question_text') || 'Введите текст вопроса!');
+      alert('Введите текст вопроса!');
       return;
     }
 
     const newQuestion = {
       ...currentQuestion,
       id: Date.now() + Math.random(),
-      options: currentQuestion.type === 'multiple-choice' || currentQuestion.type === 'single-choice'
+      options: currentQuestion.type === 'multiple-choice' 
         ? currentQuestion.options.filter(opt => opt.trim() !== '')
         : []
     };
@@ -67,7 +57,7 @@ const TestCreator = ({ courseId, lessonId }) => {
   // Сохранить тест в Supabase
   const saveTest = async () => {
     if (questions.length === 0) {
-      alert(t('enter_at_least_one_question') || 'Добавьте хотя бы один вопрос!');
+      alert('Добавьте хотя бы один вопрос!');
       return;
     }
 
@@ -82,6 +72,7 @@ const TestCreator = ({ courseId, lessonId }) => {
           questions: questions.map((q, index) => ({
             ...q,
             order: index + 1,
+            // Убираем временный id
             id: undefined
           })),
           passing_score: testSettings.passingScore,
@@ -98,7 +89,7 @@ const TestCreator = ({ courseId, lessonId }) => {
 
       if (testError) throw testError;
 
-      // 2. Обновляем урок
+      // 2. Обновляем урок, чтобы показать что у него есть тест
       const { error: lessonError } = await supabase
         .from('lessons')
         .update({
@@ -109,39 +100,42 @@ const TestCreator = ({ courseId, lessonId }) => {
 
       if (lessonError) {
         console.error('Ошибка обновления урока:', lessonError);
+        // Не прерываем выполнение, тест уже создан
       }
 
-      alert(t('test_saved') || '✅ Тест успешно сохранен!');
-      setQuestions([]);
+      // 3. Также обновляем курс, чтобы увеличить счетчик тестов если нужно
+      // (опционально, зависит от вашей структуры)
+
+      alert('✅ Тест успешно сохранен в Supabase!');
+      setQuestions([]); // Очищаем после сохранения
 
     } catch (error) {
       console.error('Ошибка сохранения теста:', error);
-      alert(t('save_error') || 'Ошибка: ' + error.message);
+      alert('Ошибка: ' + error.message);
     }
   };
 
+  // ... остальная часть JSX остается без изменений ...
   return (
     <div className="bg-gray-800/50 rounded-2xl p-6 border border-gray-700">
-      <h3 className="text-xl font-bold mb-6">
-        📝 {t('test_creation') || 'Создание теста для урока'}
-      </h3>
+      <h3 className="text-xl font-bold mb-6">📝 Создание теста для урока</h3>
 
       {/* Настройки теста */}
       <div className="mb-8 p-4 bg-gray-900/50 rounded-xl">
-        <h4 className="font-bold mb-4">⚙️ {t('test_settings') || 'Настройки теста'}</h4>
+        <h4 className="font-bold mb-4">⚙️ Настройки теста</h4>
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm mb-2">{t('test_title') || 'Название теста'}</label>
+            <label className="block text-sm mb-2">Название теста</label>
             <input
               type="text"
               value={testSettings.title}
               onChange={(e) => setTestSettings({...testSettings, title: e.target.value})}
               className="w-full p-3 bg-gray-800 rounded-lg"
-              placeholder={t('for_lesson') || 'Тест по теме...'}
+              placeholder="Тест по теме..."
             />
           </div>
           <div>
-            <label className="block text-sm mb-2">{t('passing_score') || 'Проходной балл (%)'}</label>
+            <label className="block text-sm mb-2">Проходной балл (%)</label>
             <input
               type="number"
               min="0"
@@ -152,7 +146,7 @@ const TestCreator = ({ courseId, lessonId }) => {
             />
           </div>
           <div>
-            <label className="block text-sm mb-2">{t('time_limit') || 'Лимит времени (сек)'}</label>
+            <label className="block text-sm mb-2">Лимит времени (сек)</label>
             <input
               type="number"
               min="60"
@@ -163,7 +157,7 @@ const TestCreator = ({ courseId, lessonId }) => {
             />
           </div>
           <div>
-            <label className="block text-sm mb-2">{t('allowed_attempts') || 'Попыток разрешено'}</label>
+            <label className="block text-sm mb-2">Попыток разрешено</label>
             <input
               type="number"
               min="1"
@@ -178,39 +172,39 @@ const TestCreator = ({ courseId, lessonId }) => {
 
       {/* Форма создания вопроса */}
       <div className="mb-8 p-4 bg-gray-900/50 rounded-xl">
-        <h4 className="font-bold mb-4">➕ {t('new_question') || 'Новый вопрос'}</h4>
+        <h4 className="font-bold mb-4">➕ Новый вопрос</h4>
         
         <div className="space-y-4">
           {/* Текст вопроса */}
           <div>
-            <label className="block text-sm mb-2">{t('question_text') || 'Текст вопроса *'}</label>
+            <label className="block text-sm mb-2">Текст вопроса *</label>
             <textarea
               value={currentQuestion.text}
               onChange={(e) => setCurrentQuestion({...currentQuestion, text: e.target.value})}
               className="w-full p-3 bg-gray-800 rounded-lg h-24"
-              placeholder={t('enter_question') || 'Введите вопрос...'}
+              placeholder="Введите вопрос..."
             />
           </div>
 
           {/* Тип вопроса */}
           <div>
-            <label className="block text-sm mb-2">{t('question_type') || 'Тип вопроса'}</label>
+            <label className="block text-sm mb-2">Тип вопроса</label>
             <select
               value={currentQuestion.type}
               onChange={(e) => setCurrentQuestion({...currentQuestion, type: e.target.value})}
               className="w-full p-3 bg-gray-800 rounded-lg"
             >
-              <option value="multiple-choice">{t('multiple_choice') || 'Множественный выбор'}</option>
-              <option value="true-false">{t('true_false') || 'Верно/Неверно'}</option>
-              <option value="single-choice">{t('single_choice') || 'Один вариант'}</option>
-              <option value="text">{t('text_answer') || 'Текстовый ответ'}</option>
+              <option value="multiple-choice">Множественный выбор</option>
+              <option value="true-false">Верно/Неверно</option>
+              <option value="single-choice">Один вариант</option>
+              <option value="text">Текстовый ответ</option>
             </select>
           </div>
 
-          {/* Варианты ответов */}
+          {/* Варианты ответов (для multiple/single choice) */}
           {(currentQuestion.type === 'multiple-choice' || currentQuestion.type === 'single-choice') && (
             <div>
-              <label className="block text-sm mb-2">{t('options') || 'Варианты ответов'}</label>
+              <label className="block text-sm mb-2">Варианты ответов</label>
               {currentQuestion.options.map((option, index) => (
                 <div key={index} className="flex items-center gap-3 mb-2">
                   <input
@@ -229,7 +223,7 @@ const TestCreator = ({ courseId, lessonId }) => {
                       setCurrentQuestion({...currentQuestion, options: newOptions});
                     }}
                     className="flex-1 p-2 bg-gray-800 rounded-lg"
-                    placeholder={`${t('option') || 'Вариант'} ${index + 1}`}
+                    placeholder={`Вариант ${index + 1}`}
                   />
                   <button
                     onClick={() => {
@@ -238,7 +232,7 @@ const TestCreator = ({ courseId, lessonId }) => {
                     }}
                     className="px-3 py-1 bg-red-600 rounded-lg text-sm"
                   >
-                    {t('remove') || '✕'}
+                    ✕
                   </button>
                 </div>
               ))}
@@ -249,7 +243,7 @@ const TestCreator = ({ courseId, lessonId }) => {
                 })}
                 className="mt-2 px-4 py-2 bg-blue-600 rounded-lg text-sm"
               >
-                + {t('add_option') || 'Добавить вариант'}
+                + Добавить вариант
               </button>
             </div>
           )}
@@ -257,7 +251,7 @@ const TestCreator = ({ courseId, lessonId }) => {
           {/* Для верно/неверно */}
           {currentQuestion.type === 'true-false' && (
             <div>
-              <label className="block text-sm mb-2">{t('correct_answer') || 'Правильный ответ'}</label>
+              <label className="block text-sm mb-2">Правильный ответ</label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2">
                   <input
@@ -266,7 +260,7 @@ const TestCreator = ({ courseId, lessonId }) => {
                     checked={currentQuestion.correctAnswer === 0}
                     onChange={() => setCurrentQuestion({...currentQuestion, correctAnswer: 0})}
                   />
-                  {t('true') || 'Верно'}
+                  Верно
                 </label>
                 <label className="flex items-center gap-2">
                   <input
@@ -275,16 +269,16 @@ const TestCreator = ({ courseId, lessonId }) => {
                     checked={currentQuestion.correctAnswer === 1}
                     onChange={() => setCurrentQuestion({...currentQuestion, correctAnswer: 1})}
                   />
-                  {t('false') || 'Неверно'}
+                  Неверно
                 </label>
               </div>
             </div>
           )}
 
-          {/* Баллы и время видео */}
+          {/* Баллы и объяснение */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm mb-2">{t('points_per_question') || 'Баллы за вопрос'}</label>
+              <label className="block text-sm mb-2">Баллы за вопрос</label>
               <input
                 type="number"
                 min="1"
@@ -295,7 +289,7 @@ const TestCreator = ({ courseId, lessonId }) => {
               />
             </div>
             <div>
-              <label className="block text-sm mb-2">{t('video_time') || 'Время в видео (мм:сс)'}</label>
+              <label className="block text-sm mb-2">Время в видео (мм:сс)</label>
               <input
                 type="text"
                 value={currentQuestion.videoTimestamp}
@@ -308,12 +302,12 @@ const TestCreator = ({ courseId, lessonId }) => {
 
           {/* Объяснение ответа */}
           <div>
-            <label className="block text-sm mb-2">{t('explanation') || 'Объяснение (показывается после ответа)'}</label>
+            <label className="block text-sm mb-2">Объяснение (показывается после ответа)</label>
             <textarea
               value={currentQuestion.explanation}
               onChange={(e) => setCurrentQuestion({...currentQuestion, explanation: e.target.value})}
               className="w-full p-3 bg-gray-800 rounded-lg h-20"
-              placeholder={t('why_answer_correct') || 'Почему этот ответ правильный...'}
+              placeholder="Почему этот ответ правильный..."
             />
           </div>
 
@@ -322,7 +316,7 @@ const TestCreator = ({ courseId, lessonId }) => {
             onClick={addQuestion}
             className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-lg font-bold hover:opacity-90"
           >
-            ✅ {t('add_question') || 'Добавить вопрос'}
+            ✅ Добавить вопрос
           </button>
         </div>
       </div>
@@ -331,7 +325,7 @@ const TestCreator = ({ courseId, lessonId }) => {
       {questions.length > 0 && (
         <div className="mb-8">
           <h4 className="font-bold mb-4">
-            📋 {t('added_questions') || 'Добавленные вопросы'} ({questions.length})
+            📋 Добавленные вопросы ({questions.length})
           </h4>
           <div className="space-y-4">
             {questions.map((question, index) => (
@@ -343,19 +337,19 @@ const TestCreator = ({ courseId, lessonId }) => {
                   </div>
                   <div className="flex gap-2">
                     <span className="px-2 py-1 bg-yellow-600 rounded text-xs">
-                      {question.points} {t('points') || 'баллов'}
+                      {question.points} баллов
                     </span>
                     <button
                       onClick={() => removeQuestion(question.id)}
                       className="px-3 py-1 bg-red-600 rounded-lg text-sm"
                     >
-                      {t('remove') || 'Удалить'}
+                      Удалить
                     </button>
                   </div>
                 </div>
                 {question.type === 'multiple-choice' && (
                   <div className="mt-2">
-                    <div className="text-sm text-gray-400">{t('options') || 'Варианты'}:</div>
+                    <div className="text-sm text-gray-400">Варианты:</div>
                     <div className="flex flex-wrap gap-2 mt-1">
                       {question.options.map((opt, idx) => (
                         <div 
@@ -382,17 +376,17 @@ const TestCreator = ({ courseId, lessonId }) => {
             <div className="flex justify-between items-center">
               <div>
                 <div className="text-lg font-bold">
-                  {t('total_points') || 'Всего баллов'}: {questions.reduce((sum, q) => sum + q.points, 0)}
+                  Всего баллов: {questions.reduce((sum, q) => sum + q.points, 0)}
                 </div>
                 <div className="text-sm text-gray-400">
-                  {t('needed_to_pass') || 'Для прохождения нужно'}: {testSettings.passingScore}%
+                  Для прохождения нужно: {testSettings.passingScore}%
                 </div>
               </div>
               <button
                 onClick={saveTest}
                 className="px-8 py-3 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg font-bold hover:opacity-90"
               >
-                💾 {t('save_to_supabase') || 'Сохранить тест в Supabase'}
+                💾 Сохранить тест в Supabase
               </button>
             </div>
           </div>

@@ -199,7 +199,7 @@ const Navbar = () => {
                             EH
                         </div>
                         <h1 className="text-lg sm:text-xl md:text-2xl font-bold ml-1 sm:ml-2 text-gray-800 dark:text-white">
-                            {t('app_name')}<span className="text-xs ml-1 bg-gradient-to-r from-[#0AB685] to-[#1855D4] bg-clip-text text-transparent">Uz</span>
+                            EduHelper<span className="text-xs ml-1 bg-gradient-to-r from-[#0AB685] to-[#1855D4] bg-clip-text text-transparent">Uz</span>
                         </h1>
                     </button>
                 </NavLink>
