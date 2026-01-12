@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase'; // Импортируем Supabase клиент
 
-const TestCreator = ({ courseId, lessonId }) => {
+const TestCreatorInline = ({ courseId, lessonId }) => {
   const [questions, setQuestions] = useState([]);
   const [currentQuestion, setCurrentQuestion] = useState({
     text: '',
@@ -396,4 +396,4 @@ const TestCreator = ({ courseId, lessonId }) => {
   );
 };
 
-export default TestCreator;
+export default TestCreatorInline;
