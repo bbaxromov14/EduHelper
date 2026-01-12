@@ -80,8 +80,6 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
         updated_at: new Date().toISOString()
       };
 
-      console.log('Saving test data:', testData);
-
       const { data: test, error } = await supabase
         .from('tests')
         .insert(testData)
