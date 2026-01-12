@@ -15,6 +15,9 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
   const [title, setTitle] = useState(t('test_for_lesson', 'Dars uchun test'));
   const [passingScore, setPassingScore] = useState(70);
   const [saving, setSaving] = useState(false);
+  const [timeLimit, setTimeLimit] = useState(300); // 300 секунд = 5 минут
+  const [attemptsAllowed, setAttemptsAllowed] = useState(1);
+  const [showResults, setShowResults] = useState(true);
 
   const addQuestion = () => {
     if (!current.text.trim()) {
@@ -58,22 +61,30 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
     try {
       const totalPoints = questions.reduce((sum, q) => sum + (q.points || 10), 0);
       
+      // Правильные поля согласно структуре таблицы
+      const testData = {
+        course_id: courseId,
+        lesson_id: lessonId,
+        title: title.trim() || t('test_for_lesson', 'Dars uchun test'),
+        questions: questions.map((q, i) => ({ 
+          ...q, 
+          order: i + 1 
+        })),
+        passing_score: passingScore,
+        time_limit: timeLimit,
+        attempts_allowed: attemptsAllowed,
+        show_results: showResults,
+        total_points: totalPoints,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('Saving test data:', testData);
+
       const { data: test, error } = await supabase
         .from('tests')
-        .insert({
-          course_id: courseId,
-          lesson_id: lessonId,
-          title: title.trim() || t('test_for_lesson', 'Dars uchun test'),
-          questions: questions.map((q, i) => ({ ...q, order: i + 1 })),
-          passing_score: passingScore,
-          total_points: totalPoints,
-          time_limit: 300, // 5 минут по умолчанию
-          allowed_attempts: 1,
-          show_results: true,
-          status: 'active',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
+        .insert(testData)
         .select()
         .single();
 
@@ -95,6 +106,9 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
       setQuestions([]);
       setTitle(t('test_for_lesson', 'Dars uchun test'));
       setPassingScore(70);
+      setTimeLimit(300);
+      setAttemptsAllowed(1);
+      setShowResults(true);
       
       // Notify parent
       if (onSave) onSave(test);
@@ -119,6 +133,16 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
     setQuestions(newQuestions);
   };
 
+  // Форматирование времени
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (minutes === 0) {
+      return `${secs} сек`;
+    }
+    return secs === 0 ? `${minutes} мин` : `${minutes} мин ${secs} сек`;
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 p-6 rounded-2xl">
@@ -130,10 +154,10 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
         </p>
         
         {/* Test Settings */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <div>
             <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-              {t('test_title', 'Test nomi')}
+              {t('test_title', 'Test nomi')} *
             </label>
             <input
               type="text"
@@ -141,6 +165,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
               onChange={e => setTitle(e.target.value)}
               placeholder={t('test_for_lesson', 'Dars uchun test')}
               className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              required
             />
           </div>
           
@@ -157,6 +182,62 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
               className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               placeholder="70"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              {t('time_limit', 'Vaqt chegarasi (sek)')}
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={timeLimit}
+                onChange={e => setTimeLimit(Math.max(30, +e.target.value))}
+                min="30"
+                max="3600"
+                className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                placeholder="300"
+              />
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {formatTime(timeLimit)}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+              {t('allowed_attempts', 'Ruxsat etilgan urinishlar')}
+            </label>
+            <input
+              type="number"
+              value={attemptsAllowed}
+              onChange={e => setAttemptsAllowed(Math.max(1, +e.target.value))}
+              min="1"
+              max="10"
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              placeholder="1"
+            />
+            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              {attemptsAllowed === 1 ? '1 marta' : `${attemptsAllowed} marta`}
+            </div>
+          </div>
+        </div>
+
+        {/* Advanced Settings */}
+        <div className="mb-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showResults}
+              onChange={(e) => setShowResults(e.target.checked)}
+              className="h-5 w-5 text-blue-600 rounded"
+            />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              {t('show_results', 'Natijalarni ko‘rsatish')}
+            </span>
+          </label>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 ml-7">
+            Testdan keyin to‘g‘ri javoblarni ko‘rsatish
           </div>
         </div>
       </div>
@@ -178,6 +259,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
             placeholder={t('enter_question', 'Savolni kiriting...')}
             className="w-full p-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             rows="3"
+            required
           />
         </div>
 
@@ -195,6 +277,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                   checked={current.correct === i}
                   onChange={() => setCurrent({ ...current, correct: i })}
                   className="h-5 w-5 text-blue-600"
+                  required
                 />
                 <input
                   type="text"
@@ -206,6 +289,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                   }}
                   placeholder={`${t('option', 'Variant')} ${i + 1}`}
                   className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  required={i < 2}
                 />
                 {current.options.length > 2 && (
                   <button
@@ -219,6 +303,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                       });
                     }}
                     className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-200 dark:hover:bg-red-800/50"
+                    type="button"
                   >
                     {t('remove', 'O‘chirish')}
                   </button>
@@ -231,6 +316,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
           <button
             onClick={() => setCurrent({ ...current, options: [...current.options, ''] })}
             className="mt-3 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg text-sm font-medium hover:bg-blue-200 dark:hover:bg-blue-800/50 flex items-center gap-2"
+            type="button"
           >
             <span>+</span>
             {t('add_option', 'Variant qo‘shish')}
@@ -251,6 +337,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
             value={current.points}
             onChange={e => setCurrent({ ...current, points: Math.max(1, +e.target.value) })}
             min="1"
+            max="100"
             className="w-32 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
           />
         </div>
@@ -259,6 +346,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
         <button
           onClick={addQuestion}
           className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-colors"
+          type="button"
         >
           <span>✅</span>
           {t('add_question', 'Savol qo‘shish')}
@@ -273,11 +361,11 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
               📋 {t('added_questions', 'Qo‘shilgan savollar')} ({questions.length})
             </h4>
             <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
-              {t('test_total_points', 'Umumiy ball')}: {questions.reduce((sum, q) => sum + (q.points || 10), 0)}
+              {t('total_points', 'Umumiy ball')}: {questions.reduce((sum, q) => sum + (q.points || 10), 0)}
             </div>
           </div>
           
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
             {questions.map((q, i) => (
               <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-xl p-4 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors">
                 <div className="flex justify-between items-start mb-2">
@@ -296,7 +384,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                           <div className={`w-4 h-4 flex items-center justify-center rounded-full text-xs ${oIndex === q.correct ? 'bg-green-100 dark:bg-green-900/30' : 'bg-gray-100 dark:bg-gray-700'}`}>
                             {String.fromCharCode(65 + oIndex)}
                           </div>
-                          <span>{opt}</span>
+                          <span className={oIndex === q.correct ? 'font-semibold' : ''}>{opt}</span>
                           {oIndex === q.correct && (
                             <span className="text-xs bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-2 py-0.5 rounded">
                               {t('correct', 'To‘g‘ri')}
@@ -315,12 +403,14 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                         value={q.points || 10}
                         onChange={e => updateQuestionPoints(i, e.target.value)}
                         min="1"
+                        max="100"
                         className="w-16 px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-center"
                       />
                     </div>
                     <button
                       onClick={() => removeQuestion(i)}
                       className="px-3 py-1 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-sm font-medium hover:bg-red-200 dark:hover:bg-red-800/50"
+                      type="button"
                     >
                       {t('remove', 'O‘chirish')}
                     </button>
@@ -332,9 +422,9 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
 
           {/* Save Test Button */}
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-xl">
-                <div className="text-sm text-gray-600 dark:text-gray-300">{t('added_questions', 'Savollar soni')}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-300">Savollar soni</div>
                 <div className="text-2xl font-bold">{questions.length}</div>
               </div>
               <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-xl">
@@ -345,12 +435,17 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
                 <div className="text-sm text-gray-600 dark:text-gray-300">{t('passing_score', 'O‘tish balli')}</div>
                 <div className="text-2xl font-bold">{passingScore}%</div>
               </div>
+              <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-xl">
+                <div className="text-sm text-gray-600 dark:text-gray-300">{t('time_limit', 'Vaqt chegarasi')}</div>
+                <div className="text-2xl font-bold">{formatTime(timeLimit)}</div>
+              </div>
             </div>
             
             <button
               onClick={saveTest}
               disabled={saving}
               className="w-full py-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              type="button"
             >
               {saving ? (
                 <>
@@ -378,6 +473,7 @@ const TestCreatorInline = ({ lessonId, courseId, onClose, onSave }) => {
           <button
             onClick={onClose}
             className="px-6 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg font-medium"
+            type="button"
           >
             ← {t('back', 'Orqaga')}
           </button>
