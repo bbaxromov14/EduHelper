@@ -23,6 +23,7 @@ const TestPage = () => {
   const [alreadyEarnedQuestions, setAlreadyEarnedQuestions] = useState([]);
   const [attemptNumber, setAttemptNumber] = useState(1);
   const [hasMoreAttempts, setHasMoreAttempts] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const loadTestAndHistory = async () => {
@@ -162,7 +163,9 @@ const TestPage = () => {
   };
 
   const finishTest = async () => {
-    if (showResults) return;
+    if (showResults || isSaving) return;
+    
+    setIsSaving(true);
 
     let newPoints = 0;
     const userAnswers = {};
@@ -204,6 +207,33 @@ const TestPage = () => {
           ? Math.round((correctCount / totalQuestions) * 100)
           : 0;
 
+        // ВАЖНО: Получаем актуальный attempt_number перед сохранением
+        let currentAttemptNumber = attemptNumber;
+        
+        // Проверяем, нет ли уже такой попытки
+        const { data: existingAttempt } = await supabase
+          .from('test_results')
+          .select('attempt_number')
+          .eq('user_id', authUser.id)
+          .eq('test_id', test.id)
+          .eq('attempt_number', currentAttemptNumber)
+          .maybeSingle();
+
+        // Если такая попытка уже существует, увеличиваем номер
+        if (existingAttempt) {
+          // Находим максимальный attempt_number
+          const { data: maxAttemptData } = await supabase
+            .from('test_results')
+            .select('attempt_number')
+            .eq('user_id', authUser.id)
+            .eq('test_id', test.id)
+            .order('attempt_number', { ascending: false })
+            .limit(1)
+            .single();
+            
+          currentAttemptNumber = (maxAttemptData?.attempt_number || 0) + 1;
+        }
+
         // Формируем данные для сохранения
         const resultData = {
           user_id: authUser.id,
@@ -215,7 +245,7 @@ const TestPage = () => {
           total_questions: totalQuestions,
           correct_answers: correctCount,
           user_answers: userAnswers,
-          attempt_number: attemptNumber,
+          attempt_number: currentAttemptNumber,
           completed_at: new Date().toISOString()
         };
 
@@ -225,31 +255,62 @@ const TestPage = () => {
 
         if (error) {
           console.error('Ошибка сохранения результатов:', error);
-        }
+          
+          // Если все еще ошибка дублирования, пробуем еще раз с увеличенным номером
+          if (error.code === '23505') {
+            const finalAttemptNumber = currentAttemptNumber + 1;
+            const retryData = {
+              ...resultData,
+              attempt_number: finalAttemptNumber
+            };
 
-        // Обновляем локальное состояние
-        const updatedEarned = new Set(alreadyEarnedQuestions);
-        test.questions.forEach((q, i) => {
-          if (answers[i] === q.correct) {
-            updatedEarned.add(i);
+            const { error: retryError } = await supabase
+              .from('test_results')
+              .insert([retryData]);
+
+            if (!retryError) {
+              // Успешно сохранили с новым номером
+              const updatedEarned = new Set(alreadyEarnedQuestions);
+              test.questions.forEach((q, i) => {
+                if (answers[i] === q.correct) {
+                  updatedEarned.add(i);
+                }
+              });
+              setAlreadyEarnedQuestions(Array.from(updatedEarned));
+              setAttemptNumber(finalAttemptNumber + 1);
+            }
           }
-        });
-        setAlreadyEarnedQuestions(Array.from(updatedEarned));
+        } else {
+          // Если сохранение успешно
+          const updatedEarned = new Set(alreadyEarnedQuestions);
+          test.questions.forEach((q, i) => {
+            if (answers[i] === q.correct) {
+              updatedEarned.add(i);
+            }
+          });
+          setAlreadyEarnedQuestions(Array.from(updatedEarned));
+          setAttemptNumber(currentAttemptNumber + 1);
+        }
 
       } catch (err) {
         console.error('Ошибка сохранения попытки:', err);
         alert('Natijalarni saqlashda xatolik');
+      } finally {
+        setIsSaving(false);
       }
     }
   };
 
   const tryAgain = () => {
+    // Сбрасываем состояние теста
     setShowResults(false);
     setAnswers({});
     setCurrentQuestionIndex(0);
     setTimeLeft(test.time_limit || 300);
     setNewPointsEarned(0);
-    setAttemptNumber(prev => prev + 1);
+    
+    // Не нужно обновлять attemptNumber здесь - он обновится при следующем сохранении
+    // setAttemptNumber(prev => prev + 1);
   };
 
   if (loading) {
@@ -386,9 +447,10 @@ const TestPage = () => {
                   {currentQuestionIndex === test.questions.length - 1 ? (
                     <button
                       onClick={finishTest}
-                      className="px-12 py-5 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl text-white font-bold text-2xl shadow-2xl hover:scale-105 transition"
+                      disabled={isSaving}
+                      className="px-12 py-5 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl text-white font-bold text-2xl shadow-2xl hover:scale-105 transition disabled:opacity-50"
                     >
-                      Yakunlash
+                      {isSaving ? 'Saqlanmoqda...' : 'Yakunlash'}
                     </button>
                   ) : (
                     <button
