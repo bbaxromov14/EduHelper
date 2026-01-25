@@ -2,19 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/ReactContext';
-
 import premiumManager from '../../Utils/premiumManager';
 
 const Subjects = () => {
   const [courses, setCourses] = useState([]);
+  const [filteredCourses, setFilteredCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ totalLessons: 0, totalCourses: 0 });
-
   const [premiumStatus, setPremiumStatus] = useState({ is_active: false });
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const { isAuthenticated, user } = useAuth(); // ← Только user из auth!
-
+  const { isAuthenticated, user } = useAuth();
   const currentUserId = user?.id;
+
+  // Массив категорий с иконками
+  const categories = [
+    { value: 'all', label: 'Barchasi', icon: '📚' },
+    { value: 'mathematics', label: 'Matematika', icon: '🧮' },
+    { value: 'programming', label: 'Dasturlash', icon: '💻' },
+    { value: 'science', label: 'Fan', icon: '🔬' },
+    { value: 'languages', label: 'Tillar', icon: '🗣️' },
+    { value: 'general', label: 'General', icon: '📖' },
+  ];
 
   // Функция обновления статуса
   const updatePremiumStatus = async () => {
@@ -27,41 +37,15 @@ const Subjects = () => {
       const status = await premiumManager.checkPremiumStatus(currentUserId);
       const newStatus = !!status?.is_active;
       setPremiumStatus({ is_active: newStatus });
-
     } catch (error) {
       console.error('Ошибка проверки Premium:', error);
       setPremiumStatus({ is_active: false });
     }
   };
 
-  // Первичная проверка при монтировании и изменении auth
+  // Первичная проверка при монтировании
   useEffect(() => {
     updatePremiumStatus();
-  }, [isAuthenticated, currentUserId]);
-
-  // Realtime-подписка на изменения профиля
-  useEffect(() => {
-    if (!isAuthenticated || !currentUserId) return;
-
-    const channel = supabase
-      .channel('premium-profile-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'profiles',
-          filter: `id=eq.${currentUserId}`
-        },
-        (payload) => {
-          updatePremiumStatus();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, [isAuthenticated, currentUserId]);
 
   // Загрузка курсов
@@ -77,6 +61,7 @@ const Subjects = () => {
         if (error) throw error;
 
         setCourses(coursesData || []);
+        setFilteredCourses(coursesData || []);
 
         const totalLessons = coursesData?.reduce(
           (sum, course) => sum + (course.lessons?.length || 0),
@@ -97,17 +82,37 @@ const Subjects = () => {
     loadCourses();
   }, []);
 
-  // Проверка доступа — упрощённая и надёжная
+  // Фильтрация курсов при изменении категории или поиска
+  useEffect(() => {
+    let filtered = courses;
+
+    // Фильтрация по категории
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(course => course.category === selectedCategory);
+    }
+
+    // Фильтрация по поиску
+    if (searchTerm.trim() !== '') {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(course => 
+        course.title.toLowerCase().includes(term) ||
+        course.description?.toLowerCase().includes(term) ||
+        course.category?.toLowerCase().includes(term)
+      );
+    }
+
+    setFilteredCourses(filtered);
+  }, [selectedCategory, searchTerm, courses]);
+
+  // Проверка доступа
   const checkCourseAccess = (course) => {
     if (!isAuthenticated) return course.access_type === 'free';
     if (course.access_type === 'free') return true;
     if (course.access_type === 'paid' || (course.price && parseFloat(course.price) > 0)) return false;
-
-    // Всё остальное (premium, premium_only и т.д.) — открыто при активном Premium
     return premiumStatus.is_active;
   };
 
-  // Анимация fadeUp
+  // Анимация
   useEffect(() => {
     if (!document.getElementById('fadeUpAnimation')) {
       const style = document.createElement('style');
@@ -126,7 +131,7 @@ const Subjects = () => {
     };
   }, []);
 
-  // Остальные функции без изменений
+  // Функция для получения иконки курса (остаётся без изменений)
   const getCourseIcon = (title) => {
     const icons = {
       matematika: '🧮', kimyo: '⚗️', fizika: '⚛️', biologiya: '🔬',
@@ -169,6 +174,12 @@ const Subjects = () => {
     return 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80';
   };
 
+  // Получение названия категории
+  const getCategoryLabel = (categoryValue) => {
+    const category = categories.find(cat => cat.value === categoryValue);
+    return category ? category.label : 'Boshqa';
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-pink-50 dark:from-black dark:via-gray-900 dark:to-purple-950 py-16 px-6 flex items-center justify-center">
@@ -194,16 +205,68 @@ const Subjects = () => {
         <p className="text-xl md:text-2xl lg:text-3xl text-gray-700 dark:text-gray-300 font-medium mb-6">
           {stats.totalCourses} kurs • {stats.totalLessons} dars
         </p>
-        <div className="mt-8 flex justify-center">
-          <div className="px-8 py-4 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full text-black text-xl font-bold shadow-2xl animate-pulse">
+        
+        {/* Поиск */}
+        <div className="max-w-2xl mx-auto mb-8">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Kurslarni qidirish..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-6 py-4 text-lg rounded-full border-2 border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-4 focus:ring-indigo-500/30 shadow-lg"
+            />
+            <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-2xl">
+              🔍
+            </div>
+          </div>
+        </div>
+
+        {/* Фильтры категорий */}
+        <div className="flex flex-wrap justify-center gap-3 md:gap-4 mb-8">
+          {categories.map((category) => (
+            <button
+              key={category.value}
+              onClick={() => setSelectedCategory(category.value)}
+              className={`flex items-center gap-2 px-5 py-3 rounded-full text-lg font-semibold transition-all duration-300 ${
+                selectedCategory === category.value
+                  ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-2xl scale-105'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-lg'
+              }`}
+            >
+              <span className="text-2xl">{category.icon}</span>
+              <span>{category.label}</span>
+              {selectedCategory === category.value && (
+                <span className="ml-2 animate-pulse">✓</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4">
+          <div className="px-8 py-4 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full text-black text-xl font-bold shadow-2xl animate-pulse inline-block">
             Sifatli ta'lim — har kuni yangilanadi
           </div>
         </div>
       </div>
 
+      {/* Заголовок выбранной категории */}
+      {selectedCategory !== 'all' && (
+        <div className="max-w-7xl mx-auto mb-10">
+          <h2 className="text-4xl md:text-5xl font-bold text-gray-800 dark:text-white">
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600">
+              {getCategoryLabel(selectedCategory)}
+            </span>
+            <span className="text-gray-600 dark:text-gray-400 ml-4">
+              ({filteredCourses.length} kurs)
+            </span>
+          </h2>
+        </div>
+      )}
+
       {/* Сетка курсов */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:gap-8 lg:gap-10">
-        {courses.map((course, index) => {
+        {filteredCourses.map((course, index) => {
           const accessible = checkCourseAccess(course);
           const lessonCount = getLessonCount(course);
           const courseImage = getCourseImage(course);
@@ -263,6 +326,14 @@ const Subjects = () => {
                       onError={(e) => (e.target.src = 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=800&auto=format&fit=crop&q=80')}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                    
+                    {/* Бейдж категории */}
+                    <div className="absolute top-4 right-4">
+                      <span className="px-3 py-1 bg-black/70 backdrop-blur-md rounded-full text-white text-sm font-bold border border-white/30">
+                        {getCategoryLabel(course.category)}
+                      </span>
+                    </div>
+                    
                     <div className="absolute top-4 left-4 text-4xl md:text-6xl bg-black/60 backdrop-blur-md rounded-2xl p-3 border border-white/20">
                       {getCourseIcon(course.title)}
                     </div>
@@ -285,6 +356,11 @@ const Subjects = () => {
                       {course.estimated_hours && (
                         <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 rounded-full text-sm">
                           ⏱️ {course.estimated_hours} soat
+                        </span>
+                      )}
+                      {course.category && (
+                        <span className="px-3 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-sm">
+                          {getCategoryLabel(course.category)}
                         </span>
                       )}
                     </div>
@@ -323,25 +399,45 @@ const Subjects = () => {
         })}
       </div>
 
-      {courses.length === 0 && !loading && (
+      {/* Если нет курсов в выбранной категории */}
+      {filteredCourses.length === 0 && !loading && (
         <div className="text-center py-20">
-          <div className="text-6xl mb-6">📚</div>
+          <div className="text-6xl mb-6">📭</div>
           <h3 className="text-3xl font-bold text-gray-600 dark:text-gray-400 mb-4">
-            Hozircha kurslar mavjud emas
+            Ushbu kategoriyada hozircha kurslar mavjud emas
           </h3>
-          <NavLink
-            to="/eh-secret-admin-2025"
+          <button
+            onClick={() => setSelectedCategory('all')}
             className="inline-block px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-full font-bold text-xl hover:scale-105 transition"
           >
-            Admin panelga o'tish
-          </NavLink>
+            Barcha kurslarni ko'rish
+          </button>
         </div>
       )}
+
+      {/* Статистика */}
+      <div className="max-w-7xl mx-auto mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-xl text-center">
+          <div className="text-5xl mb-4">📚</div>
+          <div className="text-4xl font-black text-gray-800 dark:text-white">{stats.totalCourses}</div>
+          <div className="text-gray-600 dark:text-gray-400">Jami kurslar</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-xl text-center">
+          <div className="text-5xl mb-4">📖</div>
+          <div className="text-4xl font-black text-gray-800 dark:text-white">{stats.totalLessons}</div>
+          <div className="text-gray-600 dark:text-gray-400">Jami darslar</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-xl text-center">
+          <div className="text-5xl mb-4">🏷️</div>
+          <div className="text-4xl font-black text-gray-800 dark:text-white">{categories.length - 1}</div>
+          <div className="text-gray-600 dark:text-gray-400">Kategoriyalar</div>
+        </div>
+      </div>
 
       <div className="mt-20 text-center text-gray-500 dark:text-gray-400">
         <p className="text-lg">© {new Date().getFullYear()} EDUHELPER UZ</p>
         <p className="text-sm mt-2">
-          {stats.totalCourses} kurs • {stats.totalLessons} dars • Har kuni yangilanadi
+          {stats.totalCourses} kurs • {stats.totalLessons} dars • {categories.length - 1} kategoriya
         </p>
       </div>
     </div>
