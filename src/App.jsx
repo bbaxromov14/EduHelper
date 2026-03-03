@@ -120,7 +120,14 @@ const App = () => {
               }
             />
 
-           
+            <Route
+              path="subject/:subjectId"
+              element={
+                <ProtectedRoute>
+                  <Subject />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               path="eh-secret-admin-2025"
