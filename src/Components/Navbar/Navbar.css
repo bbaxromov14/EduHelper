@@ -1,0 +1,37 @@
+.night_light {
+    width: 50px;
+    height: 50px;
+    border-radius: 30%;
+    background-color: #F3F4F6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    transition: background-color 0.5s;
+  }
+  
+  .icon {
+    font-size: 30px;
+    position: absolute;
+    transition: transform 0.5s, color 0.5s;
+    color: #4A5565;
+  }
+  
+  .fa-sun {
+    transform: translateX(0px);
+  }
+  
+  .fa-moon {
+    transform: translateX(-150px);
+  }
+  
+  .night_light.active .fa-sun {
+    transform: translateX(150px);
+  }
+  
+  .night_light.active .fa-moon {
+    transform: translateX(0px);
+  }
+  

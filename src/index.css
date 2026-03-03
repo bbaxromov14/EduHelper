@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+:root {
+    --theme: light;
+  }
+  
+  /* Глобальные стили для темы */
+:root {
+  --bg-color: #ffffff;
+  --text-color: #1a202c;
+  --border-color: #e2e8f0;
+}
+
+.dark {
+  --bg-color: #1a202c;
+  --text-color: #f7fafc;
+  --border-color: #4a5568;
+}
+
+/* Применяем цвета ко всем элементам */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+}
+
+/* Стили для основных компонентов */
+.bg-base-100 {
+  background-color: var(--bg-color);
+}
+
+.text-base-content {
+  color: var(--text-color);
+}
+
+.border-base-300 {
+  border-color: var(--border-color);
+}
+
+
+/* Добавьте в ваш глобальный CSS файл */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-fade-out {
+  animation: fade-out 0.3s ease-out forwards;
+}
